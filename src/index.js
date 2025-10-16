@@ -4,13 +4,16 @@ import './index.css';
 import App from './App';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
+import { ActiveNDRProvider } from './ActiveNDRContext';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <ActiveNDRProvider>
+          <App />
+        </ActiveNDRProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

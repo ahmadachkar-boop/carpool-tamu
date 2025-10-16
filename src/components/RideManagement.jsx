@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, onSnapshot, updateDoc, doc, where, Timestamp } from 'firebase/firestore';
-import { Clock } from 'lucide-react';
+import { Clock, AlertCircle } from 'lucide-react';
+import { useActiveNDR } from '../ActiveNDRContext';
 
 const RideManagement = () => {
   const [activeTab, setActiveTab] = useState('pending');
@@ -13,95 +14,101 @@ const RideManagement = () => {
   const [editingRide, setEditingRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const { activeNDR, loading: ndrLoading } = useActiveNDR();
 
   // Update current time every 30 seconds to refresh live timers
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
-    }, 30000); // Update every 30 seconds
+    }, 30000);
 
     return () => clearInterval(timer);
   }, []);
 
+  // Setup ride listeners
   useEffect(() => {
+    if (!activeNDR) {
+      setLoading(false);
+      return;
+    }
+
     let unsubPending, unsubActive, unsubCompleted;
     
-    const setupListeners = () => {
-      const ridesRef = collection(db, 'rides');
-      
-      const pendingQuery = query(ridesRef, where('status', '==', 'pending'));
-      unsubPending = onSnapshot(pendingQuery, 
-        (snapshot) => {
-          const pendingRides = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              requestedAt: data.requestedAt?.toDate() || new Date()
-            };
-          }).sort((a, b) => a.requestedAt - b.requestedAt);
-          
-          setRides(prev => ({ ...prev, pending: pendingRides }));
-          setLoading(false);
-        },
-        (error) => {
-          console.error('Error in pending query:', error);
-          setLoading(false);
-        }
-      );
+    const ridesRef = collection(db, 'rides');
 
-      const activeQuery = query(ridesRef, where('status', '==', 'active'));
-      unsubActive = onSnapshot(activeQuery, 
-        (snapshot) => {
-          const activeRides = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              requestedAt: data.requestedAt?.toDate() || new Date(),
-              assignedAt: data.assignedAt?.toDate() || null,
-              pickedUpAt: data.pickedUpAt?.toDate() || null
-            };
-          }).sort((a, b) => b.requestedAt - a.requestedAt);
-          
-          setRides(prev => ({ ...prev, active: activeRides }));
-        },
-        (error) => {
-          console.error('Error in active query:', error);
-        }
-      );
+    // Pending rides listener
+    const pendingQuery = query(ridesRef, where('status', '==', 'pending'), where('ndrId', '==', activeNDR.id));
+    unsubPending = onSnapshot(pendingQuery, 
+      (snapshot) => {
+        const pendingRides = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            requestedAt: data.requestedAt?.toDate() || new Date()
+          };
+        }).sort((a, b) => a.requestedAt - b.requestedAt);
+        
+        setRides(prev => ({ ...prev, pending: pendingRides }));
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error in pending query:', error);
+        setLoading(false);
+      }
+    );
 
-      const completedQuery = query(ridesRef, where('status', 'in', ['completed', 'cancelled', 'terminated']));
-      unsubCompleted = onSnapshot(completedQuery, 
-        (snapshot) => {
-          const completedRides = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              requestedAt: data.requestedAt?.toDate() || new Date(),
-              assignedAt: data.assignedAt?.toDate() || null,
-              pickedUpAt: data.pickedUpAt?.toDate() || null,
-              completedAt: data.completedAt?.toDate() || new Date()
-            };
-          }).sort((a, b) => b.completedAt - a.completedAt);
-          
-          setRides(prev => ({ ...prev, completed: completedRides }));
-        },
-        (error) => {
-          console.error('Error in completed query:', error);
-        }
-      );
-    };
+    // Active rides listener
+    const activeQuery = query(ridesRef, where('status', '==', 'active'), where('ndrId', '==', activeNDR.id));
+    unsubActive = onSnapshot(activeQuery, 
+      (snapshot) => {
+        const activeRides = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            requestedAt: data.requestedAt?.toDate() || new Date(),
+            assignedAt: data.assignedAt?.toDate() || null,
+            pickedUpAt: data.pickedUpAt?.toDate() || null
+          };
+        }).sort((a, b) => b.requestedAt - a.requestedAt);
+        
+        setRides(prev => ({ ...prev, active: activeRides }));
+      },
+      (error) => {
+        console.error('Error in active query:', error);
+      }
+    );
 
-    setupListeners();
+    // Completed rides listener
+    const completedQuery = query(ridesRef, where('status', 'in', ['completed', 'cancelled', 'terminated']), where('ndrId', '==', activeNDR.id));
+    unsubCompleted = onSnapshot(completedQuery, 
+      (snapshot) => {
+        const completedRides = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            requestedAt: data.requestedAt?.toDate() || new Date(),
+            assignedAt: data.assignedAt?.toDate() || null,
+            pickedUpAt: data.pickedUpAt?.toDate() || null,
+            completedAt: data.completedAt?.toDate() || new Date()
+          };
+        }).sort((a, b) => b.completedAt - a.completedAt);
+        
+        setRides(prev => ({ ...prev, completed: completedRides }));
+      },
+      (error) => {
+        console.error('Error in completed query:', error);
+      }
+    );
 
     return () => {
       if (unsubPending) unsubPending();
       if (unsubActive) unsubActive();
       if (unsubCompleted) unsubCompleted();
     };
-  }, []);
+  }, [activeNDR]);
 
   // Calculate time durations
   const calculateWaitTime = (requestedAt, assignedAt) => {
@@ -271,6 +278,38 @@ const RideManagement = () => {
     return badges[status] || 'bg-gray-100 text-gray-800';
   };
 
+  // Show loading while checking for NDR
+  if (ndrLoading) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800">Ride Management</h2>
+        <div className="bg-white p-12 rounded-lg shadow text-center">
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show gate if no active NDR
+  if (!activeNDR) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800">Ride Management</h2>
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-8 text-center">
+          <AlertCircle className="mx-auto mb-4 text-yellow-600" size={64} />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">No Active NDR</h3>
+          <p className="text-gray-600 mb-4">
+            Ride Management is currently unavailable. A director must activate an NDR from the NDR Reports page before you can manage rides.
+          </p>
+          <p className="text-sm text-gray-500">
+            Directors: Go to NDR Reports and activate an Operating Night event to enable Ride Management.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while fetching rides
   if (loading) {
     return (
       <div className="space-y-6">
@@ -282,9 +321,15 @@ const RideManagement = () => {
     );
   }
 
+  // Main ride management interface
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Ride Management</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Ride Management</h2>
+        <div className="bg-green-100 px-4 py-2 rounded-lg">
+          <p className="text-sm font-semibold text-green-800">Active NDR: {activeNDR.eventName}</p>
+        </div>
+      </div>
       
       <div className="bg-white rounded-lg shadow">
         <div className="flex border-b">

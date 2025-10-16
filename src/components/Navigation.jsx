@@ -1,29 +1,35 @@
 import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Calendar, Users, Phone, Car, BarChart3, Settings, Home, ClipboardList, PlusCircle, LogOut } from 'lucide-react';
 
-const Navigation = ({ currentPage, setCurrentPage, isMobile, setShowMobileMenu, user, logout }) => {
+const Navigation = ({ isMobile, setShowMobileMenu, user, logout }) => {
+  const location = useLocation();
+  
   const navItems = [
-    { id: 'dashboard', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member'] },
-    { id: 'phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member'] },
-    { id: 'rides', icon: Car, label: 'Ride Management', roles: ['director', 'deputy', 'member'] },
-    { id: 'calendar', icon: Calendar, label: 'Event Calendar', roles: ['director', 'deputy', 'member'] },
-    { id: 'members', icon: Users, label: 'Members', roles: ['director', 'deputy'] },
-    { id: 'points', icon: BarChart3, label: 'Points Management', roles: ['director', 'deputy'] },
-    { id: 'statistics', icon: BarChart3, label: 'Statistics', roles: ['director', 'deputy'] },
-    { id: 'settings', icon: Settings, label: 'Settings', roles: ['director', 'deputy'] },
+    { path: '/', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member'] },
+    { path: '/phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member'] },
+    { path: '/ride-management', icon: Car, label: 'Ride Management', roles: ['director', 'deputy', 'member'] },
+    { path: '/calendar', icon: Calendar, label: 'Event Calendar', roles: ['director', 'deputy', 'member'] },
   ];
 
   const directorItems = [
-    { id: 'manage-events', icon: PlusCircle, label: 'Manage Events', roles: ['director'] },
-    { id: 'ndr', icon: ClipboardList, label: 'NDR Reports', roles: ['director'] },
+    { path: '/manage-events', icon: PlusCircle, label: 'Manage Events', roles: ['director', 'deputy'] },
+    { path: '/ndr-reports', icon: ClipboardList, label: 'NDR Reports', roles: ['director', 'deputy'] },
+    { path: '/members', icon: Users, label: 'Manage Members', roles: ['director', 'deputy'] },
   ];
 
   const filteredItems = navItems.filter(item => item.roles.includes(user?.role));
   const filteredDirectorItems = directorItems.filter(item => item.roles.includes(user?.role));
 
-  const handleNavClick = (id) => {
-    setCurrentPage(id);
+  const handleNavClick = () => {
     if (isMobile) setShowMobileMenu(false);
+  };
+
+  const isActive = (path) => {
+    if (path === '/') {
+      return location.pathname === '/';
+    }
+    return location.pathname.startsWith(path);
   };
 
   return (
@@ -42,16 +48,17 @@ const Navigation = ({ currentPage, setCurrentPage, isMobile, setShowMobileMenu, 
       <div className="p-4">
         <ul className="space-y-2">
           {filteredItems.map(item => (
-            <li key={item.id}>
-              <button
-                onClick={() => handleNavClick(item.id)}
+            <li key={item.path}>
+              <Link
+                to={item.path}
+                onClick={handleNavClick}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded transition ${
-                  currentPage === item.id ? 'bg-red-600' : 'hover:bg-gray-700'
+                  isActive(item.path) ? 'bg-red-600' : 'hover:bg-gray-700'
                 }`}
               >
                 <item.icon size={20} />
                 <span>{item.label}</span>
-              </button>
+              </Link>
             </li>
           ))}
         </ul>
@@ -63,16 +70,17 @@ const Navigation = ({ currentPage, setCurrentPage, isMobile, setShowMobileMenu, 
             </p>
             <ul className="space-y-2">
               {filteredDirectorItems.map(item => (
-                <li key={item.id}>
-                  <button
-                    onClick={() => handleNavClick(item.id)}
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    onClick={handleNavClick}
                     className={`w-full flex items-center space-x-3 px-4 py-3 rounded transition ${
-                      currentPage === item.id ? 'bg-red-600' : 'hover:bg-gray-700'
+                      isActive(item.path) ? 'bg-red-600' : 'hover:bg-gray-700'
                     }`}
                   >
                     <item.icon size={20} />
                     <span>{item.label}</span>
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>

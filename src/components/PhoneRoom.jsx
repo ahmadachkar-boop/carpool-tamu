@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, query, onSnapshot, where, Timestamp } from 'firebase/firestore';
+import { useActiveNDR } from '../ActiveNDRContext';
+import { AlertCircle } from 'lucide-react';
 
 const PhoneRoom = () => {
+  const { activeNDR, loading } = useActiveNDR();
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -10,8 +13,39 @@ const PhoneRoom = () => {
     dropoff: '',
     riders: 1
   });
-  const [loading, setLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800">Phone Room</h2>
+        <div className="bg-white p-12 rounded-lg shadow text-center">
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show gate if no active NDR
+  if (!activeNDR) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800">Phone Room</h2>
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-8 text-center">
+          <AlertCircle className="mx-auto mb-4 text-yellow-600" size={64} />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">No Active NDR</h3>
+          <p className="text-gray-600 mb-4">
+            Phone Room is currently unavailable. A director must activate an NDR from the NDR Reports page before you can add phone requests.
+          </p>
+          <p className="text-sm text-gray-500">
+            Directors: Go to NDR Reports and activate an Operating Night event to enable Phone Room.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async () => {
     if (!formData.name || !formData.phone || !formData.pickup || !formData.dropoff) {
@@ -19,7 +53,7 @@ const PhoneRoom = () => {
       return;
     }
 
-    setLoading(true);
+    setSubmitLoading(true);
     setMessage('');
 
     try {
@@ -34,11 +68,11 @@ const PhoneRoom = () => {
 
       if (!blacklistSnapshot.empty) {
         setMessage('This phone number is blocked');
-        setLoading(false);
+        setSubmitLoading(false);
         return;
       }
 
-        await addDoc(collection(db, 'rides'), {
+      await addDoc(collection(db, 'rides'), {
         patronName: formData.name,
         phone: formData.phone,
         pickup: formData.pickup,
@@ -47,12 +81,14 @@ const PhoneRoom = () => {
         status: 'pending',
         carNumber: null,
         assignedDriver: null,
-        requestedAt: Timestamp.now(),  // Changed from serverTimestamp()
+        requestedAt: Timestamp.now(),
         completedAt: null,
         willingToCombine: false,
         carInfo: null,
-        requestType: 'phone'
-        });
+        requestType: 'phone',
+        ndrId: activeNDR.id, // Link to active NDR
+        eventId: activeNDR.eventId // Link to event
+      });
 
       setMessage('Request submitted successfully!');
       setFormData({ name: '', phone: '', pickup: '', dropoff: '', riders: 1 });
@@ -60,13 +96,18 @@ const PhoneRoom = () => {
       console.error('Error submitting request:', error);
       setMessage('Error submitting request: ' + error.message);
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Phone Room</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Phone Room</h2>
+        <div className="bg-green-100 px-4 py-2 rounded-lg">
+          <p className="text-sm font-semibold text-green-800">Active NDR: {activeNDR.eventName}</p>
+        </div>
+      </div>
       
       <div className="bg-white p-6 rounded-lg shadow">
         {message && (
@@ -143,10 +184,10 @@ const PhoneRoom = () => {
 
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={submitLoading}
             className="w-full py-3 bg-red-600 text-white rounded-md hover:bg-red-700 transition font-medium disabled:bg-gray-400"
           >
-            {loading ? 'Submitting...' : 'Submit Phone Request'}
+            {submitLoading ? 'Submitting...' : 'Submit Phone Request'}
           </button>
         </div>
       </div>

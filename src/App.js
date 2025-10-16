@@ -10,37 +10,26 @@ import Login from './components/Login';
 import EventCalendar from './components/EventCalendar';
 import ManageEvents from './components/ManageEvents';
 import NDRReports from './components/NDRReports';
+import Members from './components/Members';
+import Register from './components/Register';
 
-const ProtectedRoute = ({ children }) => {
-  const { currentUser } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { currentUser, userProfile } = useAuth();
   
   if (!currentUser) {
     return <Navigate to="/login" />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(userProfile?.role)) {
+    return <Navigate to="/" />;
   }
   
   return children;
 };
 
 const MainApp = () => {
-  const [currentPage, setCurrentPage] = useState('dashboard');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const { userProfile, logout } = useAuth();
-
-  const renderPage = () => {
-  switch(currentPage) {
-    case 'dashboard': return <Dashboard />;
-    case 'phone-room': return <PhoneRoom />;
-    case 'rides': return <RideManagement />;
-    case 'calendar': return <EventCalendar />;
-    case 'manage-events': return <ManageEvents />;
-    case 'ndr': return <div className="text-center text-gray-500 py-12">NDR Reports - Coming Soon</div>;
-    case 'members': return <div className="text-center text-gray-500 py-12">Member Management - Coming Soon</div>;
-    case 'points': return <div className="text-center text-gray-500 py-12">Points Management - Coming Soon</div>;
-    case 'statistics': return <div className="text-center text-gray-500 py-12">Statistics - Coming Soon</div>;
-    case 'settings': return <div className="text-center text-gray-500 py-12">Settings - Coming Soon</div>;
-    default: return <Dashboard />;
-    }
-  };
 
   return (
     <div className="h-screen flex flex-col md:flex-row bg-gray-100">
@@ -53,8 +42,6 @@ const MainApp = () => {
 
       <div className={`${showMobileMenu ? 'block' : 'hidden'} md:block fixed md:relative w-64 h-full z-40`}>
         <Navigation 
-          currentPage={currentPage} 
-          setCurrentPage={setCurrentPage}
           isMobile={showMobileMenu}
           setShowMobileMenu={setShowMobileMenu}
           user={userProfile}
@@ -64,7 +51,36 @@ const MainApp = () => {
 
       <div className="flex-1 overflow-auto">
         <div className="p-4 md:p-8 pt-16 md:pt-8">
-          {renderPage()}
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/phone-room" element={<PhoneRoom />} />
+            <Route path="/ride-management" element={<RideManagement />} />
+            <Route path="/calendar" element={<EventCalendar />} />
+            <Route 
+              path="/manage-events" 
+              element={
+                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                  <ManageEvents />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/ndr-reports" 
+              element={
+                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                  <NDRReports />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/members" 
+              element={
+                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                  <Members />
+                </ProtectedRoute>
+              } 
+            />
+          </Routes>
         </div>
       </div>
     </div>
@@ -75,6 +91,7 @@ const App = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route 
         path="/*" 
         element={
