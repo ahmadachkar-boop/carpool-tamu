@@ -32,7 +32,6 @@ const EventCalendar = () => {
   }, []);
 
   // Real-time listener for selected event
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!selectedEvent) return;
 
@@ -52,8 +51,7 @@ const EventCalendar = () => {
     return () => unsubscribe();
   }, [selectedEvent?.id]);
 
-// Fetch member details when signedUp list changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Fetch member details when signedUp list changes
   useEffect(() => {
     const fetchSignedUpMembers = async () => {
       if (!selectedEvent || !selectedEvent.signedUp || selectedEvent.signedUp.length === 0) {
@@ -166,37 +164,51 @@ const EventCalendar = () => {
   const monthYear = currentDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
   // Event actions
-  const signUpForEvent = async (event) => {
-    if (!userProfile) return;
+ const signUpForEvent = async (event) => {
+  if (!userProfile) return;
 
+  try {
+    const eventRef = doc(db, 'events', event.id);
+    await updateDoc(eventRef, {
+      signedUp: arrayUnion(userProfile.id)
+    });
+
+    // If this event has an associated NDR, update it
+    if (event.ndrId) {
+      const ndrRef = doc(db, 'ndrs', event.ndrId);
+      await updateDoc(ndrRef, {
+        signedUpMembers: arrayUnion(userProfile.id)
+      });
+    }
+  } catch (error) {
+    console.error('Error signing up:', error);
+    alert('Error signing up: ' + error.message);
+  }
+};
+
+const cancelSignup = async (event) => {
+  if (!userProfile) return;
+
+  if (window.confirm('Are you sure you want to cancel your signup?')) {
     try {
       const eventRef = doc(db, 'events', event.id);
       await updateDoc(eventRef, {
-        signedUp: arrayUnion(userProfile.id)
+        signedUp: arrayRemove(userProfile.id)
       });
-      // Don't close modal - it will update automatically via listener
-    } catch (error) {
-      console.error('Error signing up:', error);
-      alert('Error signing up: ' + error.message);
-    }
-  };
 
-  const cancelSignup = async (event) => {
-    if (!userProfile) return;
-
-    if (window.confirm('Are you sure you want to cancel your signup?')) {
-      try {
-        const eventRef = doc(db, 'events', event.id);
-        await updateDoc(eventRef, {
-          signedUp: arrayRemove(userProfile.id)
+      // If this event has an associated NDR, update it
+      if (event.ndrId) {
+        const ndrRef = doc(db, 'ndrs', event.ndrId);
+        await updateDoc(ndrRef, {
+          signedUpMembers: arrayRemove(userProfile.id)
         });
-        // Don't close modal - it will update automatically via listener
-      } catch (error) {
-        console.error('Error cancelling signup:', error);
-        alert('Error cancelling signup: ' + error.message);
       }
+    } catch (error) {
+      console.error('Error cancelling signup:', error);
+      alert('Error cancelling signup: ' + error.message);
     }
-  };
+  }
+};
 
   const isSignedUp = (event) => {
     return event.signedUp?.includes(userProfile?.id);

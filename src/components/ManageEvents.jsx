@@ -61,47 +61,103 @@ const ManageEvents = () => {
     setShowCreateForm(false);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    if (!formData.name || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
-      alert('Please fill in all required fields');
-      return;
-    }
+  if (!formData.name || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
+    alert('Please fill in all required fields');
+    return;
+  }
 
-    try {
-      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
-      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
+  try {
+    const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
+    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
 
-      const eventData = {
-        name: formData.name,
-        type: formData.type,
-        startDate: Timestamp.fromDate(startDateTime),
-        endDate: Timestamp.fromDate(endDateTime),
-        capacity: parseInt(formData.capacity),
-        location: formData.location,
-        description: formData.description,
-        points: parseInt(formData.points),
-        directorContact: formData.directorContact,
-        signedUp: editingEvent?.signedUp || [],
-        createdBy: userProfile.id,
-        createdAt: editingEvent ? editingEvent.createdAt : Timestamp.now()
-      };
+    const eventData = {
+      name: formData.name,
+      type: formData.type,
+      startDate: Timestamp.fromDate(startDateTime),
+      endDate: Timestamp.fromDate(endDateTime),
+      capacity: parseInt(formData.capacity),
+      location: formData.location,
+      description: formData.description,
+      points: parseInt(formData.points),
+      directorContact: formData.directorContact,
+      signedUp: editingEvent?.signedUp || [],
+      createdBy: userProfile.id,
+      createdAt: editingEvent ? editingEvent.createdAt : Timestamp.now()
+    };
 
-      if (editingEvent) {
-        await updateDoc(doc(db, 'events', editingEvent.id), eventData);
-        alert('Event updated successfully!');
+    if (editingEvent) {
+      // Update existing event
+      await updateDoc(doc(db, 'events', editingEvent.id), eventData);
+      
+      // If it's an operating night and there's an associated NDR, update it
+      if (formData.type.toLowerCase() === 'operating night' && editingEvent.ndrId) {
+        await updateDoc(doc(db, 'ndrs', editingEvent.ndrId), {
+          eventName: formData.name,
+          eventDate: Timestamp.fromDate(startDateTime),
+          location: formData.location
+        });
+      }
+      
+      alert('Event updated successfully!');
+    } else {
+      // Create new event
+      const eventRef = await addDoc(collection(db, 'events'), eventData);
+      
+      // Auto-create NDR if event type is Operating Night
+      if (formData.type.toLowerCase() === 'operating night') {
+        const ndrData = {
+          eventId: eventRef.id,
+          eventName: formData.name,
+          eventDate: Timestamp.fromDate(startDateTime),
+          location: formData.location,
+          status: 'pending',
+          signedUpMembers: [],
+          completedRides: 0,
+          cancelledRides: 0,
+          terminatedRides: 0,
+          assignments: {
+            cars: {},
+            couch: [],
+            phones: [],
+            doc: null,
+            duc: null,
+            don: null,
+            northgate: []
+          },
+          cars: [],
+          notes: {
+            leadership: { don: '', doc: '', duc: '', execs: '', directors: '' },
+            carRoles: {},
+            couchPhoneRoles: { couch: '', phones: '' },
+            updates: [],
+            summary: ''
+          },
+          createdBy: userProfile.id,
+          createdAt: Timestamp.now()
+        };
+        
+        const ndrRef = await addDoc(collection(db, 'ndrs'), ndrData);
+        
+        // Link the NDR back to the event
+        await updateDoc(eventRef, {
+          ndrId: ndrRef.id
+        });
+        
+        alert('Event and NDR created successfully!');
       } else {
-        await addDoc(collection(db, 'events'), eventData);
         alert('Event created successfully!');
       }
-
-      resetForm();
-    } catch (error) {
-      console.error('Error saving event:', error);
-      alert('Error saving event: ' + error.message);
     }
-  };
+
+    resetForm();
+  } catch (error) {
+    console.error('Error saving event:', error);
+    alert('Error saving event: ' + error.message);
+  }
+};
 
   const handleEdit = (event) => {
     const startDate = event.startDate.toISOString().split('T')[0];

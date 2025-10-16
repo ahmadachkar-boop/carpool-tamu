@@ -9,6 +9,7 @@ import RideManagement from './components/RideManagement';
 import Login from './components/Login';
 import EventCalendar from './components/EventCalendar';
 import ManageEvents from './components/ManageEvents';
+import NDRReports from './components/NDRReports';
 
 const ProtectedRoute = ({ children }) => {
   const { currentUser } = useAuth();
