@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
 import { useAuth } from './AuthContext';
-import Navigation from './components/Navigation';
+import TopNavigation from './components/TopNavigation';
 import Dashboard from './components/Dashboard';
 import PhoneRoom from './components/PhoneRoom';
 import RideManagement from './components/RideManagement';
@@ -28,29 +27,16 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 };
 
 const MainApp = () => {
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const { userProfile, logout } = useAuth();
 
   return (
-    <div className="h-screen flex flex-col md:flex-row bg-gray-100">
-      <button
-        onClick={() => setShowMobileMenu(!showMobileMenu)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 text-white rounded-lg"
-      >
-        {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
-      </button>
+    <div className="min-h-screen flex flex-col bg-gray-100">
+      {/* Top Navigation Bar */}
+      <TopNavigation user={userProfile} logout={logout} />
 
-      <div className={`${showMobileMenu ? 'block' : 'hidden'} md:block fixed md:relative w-64 h-full z-40`}>
-        <Navigation 
-          isMobile={showMobileMenu}
-          setShowMobileMenu={setShowMobileMenu}
-          user={userProfile}
-          logout={logout}
-        />
-      </div>
-
+      {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
-        <div className="p-4 md:p-8 pt-16 md:pt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/phone-room" element={<PhoneRoom />} />

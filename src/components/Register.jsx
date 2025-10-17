@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { Car } from 'lucide-react';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -101,26 +102,35 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl my-8 overflow-hidden">
-        <div className="p-8 bg-red-600">
-          <h1 className="text-3xl font-bold text-white text-center">Join CARPOOL</h1>
-          <p className="text-red-100 text-center mt-2">Texas A&M University</p>
+    <div className="min-h-screen bg-gradient-to-br from-lime-400 via-lime-500 to-lime-600 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 overflow-hidden">
+        <div className="p-8 bg-gradient-to-r from-lime-500 to-lime-600">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg">
+              <Car className="text-lime-600" size={28} strokeWidth={2.5} />
+            </div>
+            <h1 className="text-3xl font-bold text-white">Join CARPOOL</h1>
+          </div>
+          <p className="text-lime-50 text-center font-medium">Texas A&M University</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              {error}
+            <div className="bg-red-50 border-2 border-red-400 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+              <span className="text-red-500 font-bold">⚠</span>
+              <span className="text-sm">{error}</span>
             </div>
           )}
 
           {/* Basic Information */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Basic Information</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">1</span>
+              Basic Information
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Full Name *
                 </label>
                 <input
@@ -128,13 +138,13 @@ const Register = () => {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Email *
                 </label>
                 <input
@@ -142,13 +152,13 @@ const Register = () => {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Password *
                 </label>
                 <input
@@ -156,14 +166,14 @@ const Register = () => {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   required
                   minLength="6"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Confirm Password *
                 </label>
                 <input
@@ -171,14 +181,14 @@ const Register = () => {
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   required
                   minLength="6"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Phone Number *
                 </label>
                 <input
@@ -186,13 +196,13 @@ const Register = () => {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Gender
                 </label>
                 <input
@@ -200,13 +210,13 @@ const Register = () => {
                   name="gender"
                   value={formData.gender}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   placeholder="e.g., Male, Female, Non-binary"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Pronouns
                 </label>
                 <input
@@ -214,7 +224,7 @@ const Register = () => {
                   name="pronouns"
                   value={formData.pronouns}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   placeholder="e.g., he/him, she/her, they/them"
                 />
               </div>
@@ -223,10 +233,13 @@ const Register = () => {
 
           {/* Address */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Address</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">2</span>
+              Address
+            </h3>
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Street Address
                 </label>
                 <input
@@ -234,13 +247,13 @@ const Register = () => {
                   name="address"
                   value={formData.address}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     City
                   </label>
                   <input
@@ -248,12 +261,12 @@ const Register = () => {
                     name="city"
                     value={formData.city}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     State
                   </label>
                   <input
@@ -261,12 +274,12 @@ const Register = () => {
                     name="state"
                     value={formData.state}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     ZIP Code
                   </label>
                   <input
@@ -274,7 +287,7 @@ const Register = () => {
                     name="zip"
                     value={formData.zip}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   />
                 </div>
               </div>
@@ -283,10 +296,13 @@ const Register = () => {
 
           {/* Emergency Contact */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Emergency Contact</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">3</span>
+              Emergency Contact
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Contact Name
                 </label>
                 <input
@@ -294,12 +310,12 @@ const Register = () => {
                   name="emergencyContact"
                   value={formData.emergencyContact}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Contact Phone
                 </label>
                 <input
@@ -307,7 +323,7 @@ const Register = () => {
                   name="emergencyPhone"
                   value={formData.emergencyPhone}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                 />
               </div>
             </div>
@@ -315,10 +331,13 @@ const Register = () => {
 
           {/* Additional Information */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Additional Information</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">4</span>
+              Additional Information
+            </h3>
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Car Information
                 </label>
                 <input
@@ -326,13 +345,13 @@ const Register = () => {
                   name="carInfo"
                   value={formData.carInfo}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   placeholder="e.g., 2020 Honda Civic, Blue, ABC-1234"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Dietary Restrictions
                 </label>
                 <input
@@ -340,7 +359,7 @@ const Register = () => {
                   name="dietaryRestrictions"
                   value={formData.dietaryRestrictions}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
                   placeholder="e.g., Vegetarian, Gluten-free, None"
                 />
               </div>
@@ -352,7 +371,7 @@ const Register = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
+              className="w-full px-6 py-4 bg-gradient-to-r from-lime-500 to-lime-600 text-white font-bold text-lg rounded-lg hover:from-lime-600 hover:to-lime-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all shadow-lg shadow-lime-500/30 disabled:shadow-none"
             >
               {loading ? 'Creating Account...' : 'Register'}
             </button>
@@ -360,7 +379,7 @@ const Register = () => {
 
           <div className="text-center text-sm text-gray-600">
             Already have an account?{' '}
-            <Link to="/login" className="text-red-600 hover:text-red-700 font-medium">
+            <Link to="/login" className="text-lime-600 hover:text-lime-700 font-bold">
               Login here
             </Link>
           </div>

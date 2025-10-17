@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, onSnapshot, updateDoc, doc, where, Timestamp } from 'firebase/firestore';
-import { Clock, AlertCircle } from 'lucide-react';
+import { Clock, AlertCircle, Car } from 'lucide-react';
 import { useActiveNDR } from '../ActiveNDRContext';
 
 const RideManagement = () => {
@@ -12,9 +12,12 @@ const RideManagement = () => {
     completed: []
   });
   const [editingRide, setEditingRide] = useState(null);
+  const [assigningRide, setAssigningRide] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
+
+  const availableCars = activeNDR?.availableCars || 0;
 
   // Update current time every 30 seconds to refresh live timers
   useEffect(() => {
@@ -157,19 +160,25 @@ const RideManagement = () => {
     return 'text-red-600';
   };
 
-  const assignCar = async (rideId) => {
-    const carNum = prompt('Enter car number (1-10):');
-    if (carNum) {
-      try {
-        await updateDoc(doc(db, 'rides', rideId), {
-          carNumber: parseInt(carNum),
-          status: 'active',
-          assignedAt: Timestamp.now()
-        });
-      } catch (error) {
-        console.error('Error assigning car:', error);
-        alert('Error assigning car: ' + error.message);
-      }
+  const openAssignCar = (ride) => {
+    if (availableCars === 0) {
+      alert('No cars are available for this event. Please update the car count in NDR Assignments.');
+      return;
+    }
+    setAssigningRide(ride);
+  };
+
+  const assignCar = async (rideId, carNumber) => {
+    try {
+      await updateDoc(doc(db, 'rides', rideId), {
+        carNumber: carNumber,
+        status: 'active',
+        assignedAt: Timestamp.now()
+      });
+      setAssigningRide(null);
+    } catch (error) {
+      console.error('Error assigning car:', error);
+      alert('Error assigning car: ' + error.message);
     }
   };
 
@@ -324,12 +333,28 @@ const RideManagement = () => {
   // Main ride management interface
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Ride Management</h2>
-        <div className="bg-green-100 px-4 py-2 rounded-lg">
-          <p className="text-sm font-semibold text-green-800">Active NDR: {activeNDR.eventName}</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="bg-green-100 px-4 py-2 rounded-lg">
+            <p className="text-sm font-semibold text-green-800">Active NDR: {activeNDR.eventName}</p>
+          </div>
+          <div className="bg-blue-100 px-4 py-2 rounded-lg flex items-center gap-2">
+            <Car size={18} className="text-blue-800" />
+            <p className="text-sm font-semibold text-blue-800">
+              {availableCars} {availableCars === 1 ? 'Car' : 'Cars'} Available
+            </p>
+          </div>
         </div>
       </div>
+
+      {availableCars === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-yellow-800 font-medium">
+            ⚠️ No cars are set as available for this event. Directors should update the car count in NDR Assignments.
+          </p>
+        </div>
+      )}
       
       <div className="bg-white rounded-lg shadow">
         <div className="flex border-b">
@@ -412,6 +437,28 @@ const RideManagement = () => {
                         Cancel
                       </button>
                     </div>
+                  </div>
+                ) : assigningRide?.id === ride.id ? (
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-lg mb-2">Assign Car to {ride.patronName}</h4>
+                    <p className="text-sm text-gray-600 mb-3">Select which car will handle this ride:</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                      {Array.from({ length: availableCars }, (_, i) => i + 1).map(carNum => (
+                        <button
+                          key={carNum}
+                          onClick={() => assignCar(ride.id, carNum)}
+                          className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold text-lg transition"
+                        >
+                          Car {carNum}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setAssigningRide(null)}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 mt-2"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 ) : (
                   <>
@@ -539,7 +586,7 @@ const RideManagement = () => {
                       {activeTab === 'pending' && (
                         <>
                           <button
-                            onClick={() => assignCar(ride.id)}
+                            onClick={() => openAssignCar(ride)}
                             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                           >
                             Assign Car

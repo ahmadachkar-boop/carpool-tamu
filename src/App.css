@@ -1,3 +1,9 @@
+/* ========================================
+   LIME GREEN THEME - App.css
+   Primary Color: #89F336
+   ======================================== */
+
+/* Base App Styles */
 .App {
   text-align: center;
 }
@@ -25,7 +31,7 @@
 }
 
 .App-link {
-  color: #61dafb;
+  color: #89F336;
 }
 
 @keyframes App-logo-spin {
@@ -34,5 +40,286 @@
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ========================================
+   LIME GREEN THEME COLORS
+   ======================================== */
+
+/* Primary Buttons */
+.bg-red-500,
+.bg-red-600 {
+  background-color: #89F336 !important;
+}
+
+.bg-red-600:hover,
+.hover\:bg-red-700:hover {
+  background-color: #6BC91D !important;
+}
+
+/* Text Colors */
+.text-red-500,
+.text-red-600,
+.text-red-700,
+.text-red-800 {
+  color: #89F336 !important;
+}
+
+/* Border Colors */
+.border-red-200,
+.border-red-300,
+.border-red-400,
+.border-red-500 {
+  border-color: #89F336 !important;
+}
+
+/* Background Light Variants */
+.bg-red-50 {
+  background-color: rgba(137, 243, 54, 0.05) !important;
+}
+
+.bg-red-100 {
+  background-color: rgba(137, 243, 54, 0.1) !important;
+}
+
+/* Ring Colors (for focus states) */
+.ring-red-500,
+.focus\:ring-red-500:focus {
+  --tw-ring-color: #89F336 !important;
+}
+
+/* ========================================
+   MODERN BUTTON STYLES
+   ======================================== */
+
+button,
+.btn {
+  transition: all 0.2s ease-in-out;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* Primary Lime Buttons */
+.btn-lime-primary {
+  background: linear-gradient(135deg, #89F336 0%, #6BC91D 100%);
+  color: #1f2937;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  border: none;
+  box-shadow: 0 4px 12px rgba(137, 243, 54, 0.25);
+  transition: all 0.3s ease;
+}
+
+.btn-lime-primary:hover {
+  box-shadow: 0 6px 20px rgba(137, 243, 54, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-lime-primary:active {
+  transform: translateY(0);
+}
+
+/* Secondary Lime Buttons */
+.btn-lime-secondary {
+  background-color: rgba(137, 243, 54, 0.1);
+  color: #89F336;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(137, 243, 54, 0.2);
+  transition: all 0.3s ease;
+}
+
+.btn-lime-secondary:hover {
+  background-color: rgba(137, 243, 54, 0.15);
+  border-color: #89F336;
+}
+
+/* ========================================
+   MODERN CARD STYLES
+   ======================================== */
+
+.card-modern {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.card-modern:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.card-lime-accent {
+  border-left: 4px solid #89F336;
+}
+
+/* ========================================
+   BADGES AND TAGS
+   ======================================== */
+
+.badge-lime {
+  background: linear-gradient(135deg, #89F336 0%, #6BC91D 100%);
+  color: #1f2937;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* ========================================
+   LOADING AND ANIMATIONS
+   ======================================== */
+
+@keyframes pulse-lime {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-lime {
+  animation: pulse-lime 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.skeleton-lime {
+  background: linear-gradient(
+    90deg,
+    rgba(137, 243, 54, 0.05) 0%,
+    rgba(137, 243, 54, 0.15) 50%,
+    rgba(137, 243, 54, 0.05) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* ========================================
+   SCROLL BARS
+   ======================================== */
+
+/* Custom Scrollbar - Lime Green */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #89F336 0%, #6BC91D 100%);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #6BC91D 0%, #89F336 100%);
+}
+
+/* ========================================
+   UTILITY CLASSES
+   ======================================== */
+
+.gradient-lime {
+  background: linear-gradient(135deg, #89F336 0%, #6BC91D 100%);
+}
+
+.gradient-lime-text {
+  background: linear-gradient(135deg, #89F336 0%, #6BC91D 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-lime {
+  box-shadow: 0 4px 12px rgba(137, 243, 54, 0.25);
+}
+
+.shadow-lime-lg {
+  box-shadow: 0 10px 30px rgba(137, 243, 54, 0.3);
+}
+
+.border-lime {
+  border-color: #89F336;
+}
+
+.text-lime {
+  color: #89F336;
+}
+
+.bg-lime {
+  background-color: #89F336;
+}
+
+.bg-lime-light {
+  background-color: rgba(137, 243, 54, 0.1);
+}
+
+/* ========================================
+   FORM INPUTS
+   ======================================== */
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #89F336;
+  box-shadow: 0 0 0 3px rgba(137, 243, 54, 0.1);
+}
+
+.input-lime {
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  transition: all 0.2s ease;
+}
+
+.input-lime:focus {
+  border-color: #89F336;
+  box-shadow: 0 0 0 3px rgba(137, 243, 54, 0.1);
+}
+
+/* ========================================
+   RESPONSIVE UTILITIES
+   ======================================== */
+
+@media (max-width: 768px) {
+  .mobile-lime-nav {
+    background: linear-gradient(to bottom, #1f2937, #111827);
+  }
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+
+@media print {
+  .bg-red-500,
+  .bg-red-600,
+  .text-red-500,
+  .text-red-600 {
+    background-color: #89F336 !important;
+    color: #89F336 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
