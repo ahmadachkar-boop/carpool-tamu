@@ -15,7 +15,8 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
+  // Initialize as undefined to distinguish between "not loaded" and "no user"
+  const [currentUser, setCurrentUser] = useState(undefined);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +47,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    console.log('[Auth] Setting up auth listener...');
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('[Auth] Auth state changed:', user ? `User ${user.uid}` : 'No user');
+      
       setCurrentUser(user);
       
       if (user) {
@@ -55,16 +60,19 @@ export const AuthProvider = ({ children }) => {
           const docSnap = await getDoc(docRef);
           
           if (docSnap.exists()) {
-            setUserProfile({
+            const profile = {
               id: user.uid,
               ...docSnap.data()
-            });
+            };
+            console.log('[Auth] User profile loaded:', profile.name, profile.role);
+            setUserProfile(profile);
           } else {
-            console.log('No user profile found');
+            console.log('[Auth] No user profile found in Firestore');
             setUserProfile(null);
           }
         } catch (error) {
-          console.error('Error fetching user profile:', error);
+          console.error('[Auth] Error fetching user profile:', error);
+          setUserProfile(null);
         }
       } else {
         setUserProfile(null);
@@ -73,7 +81,10 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      console.log('[Auth] Cleaning up auth listener');
+      unsubscribe();
+    };
   }, []);
 
   const value = {

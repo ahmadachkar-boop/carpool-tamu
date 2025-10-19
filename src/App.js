@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useActiveNDR } from './ActiveNDRContext';
 import TopNavigation from './components/TopNavigation';
 import Dashboard from './components/Dashboard';
 import PhoneRoom from './components/PhoneRoom';
@@ -11,6 +12,8 @@ import ManageEvents from './components/ManageEvents';
 import NDRReports from './components/NDRReports';
 import Members from './components/Members';
 import Register from './components/Register';
+import AddressBlacklistManager from './components/AddressBlacklistManager';
+
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { currentUser, userProfile } = useAuth();
@@ -78,6 +81,7 @@ const App = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/address-blacklist" element={<AddressBlacklistManager />} />
       <Route 
         path="/*" 
         element={

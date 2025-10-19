@@ -1,116 +1,143 @@
 import React, { useState } from 'react';
-import { useAuth } from '../AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Car } from 'lucide-react';
+import { useAuth } from '../AuthContext';
+import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 
 const Login = () => {
+  const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
+    setError('');
+    setLoading(true);
 
     try {
-      setError('');
-      setLoading(true);
       await login(email, password);
       navigate('/');
     } catch (error) {
+      setError('Invalid email or password');
       console.error('Login error:', error);
-      if (error.code === 'auth/invalid-credential') {
-        setError('Invalid email or password');
-      } else if (error.code === 'auth/user-not-found') {
-        setError('No account found with this email');
-      } else if (error.code === 'auth/wrong-password') {
-        setError('Incorrect password');
-      } else {
-        setError('Failed to login: ' + error.message);
-      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-lime-400 via-lime-500 to-lime-600 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        {/* Logo/Brand */}
+    <div className="min-h-screen bg-[#79F200] flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
+      </div>
+      
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo and Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-lime-400 to-lime-600 rounded-2xl shadow-lg mb-4">
-            <Car className="text-white" size={32} strokeWidth={2.5} />
+          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6 transform hover:scale-110 transition-transform p-4">
+            <img 
+              src={`${process.env.PUBLIC_URL}/logo.png`}
+              alt="TAMU Carpool Logo" 
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('Logo failed to load');
+                e.target.style.display = 'none';
+              }}
+            />
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-lime-500 to-lime-600 bg-clip-text text-transparent mb-2">
-            CARPOOL
+          <h1 className="text-5xl md:text-6xl font-black text-white mb-3 drop-shadow-lg">
+            TAMU Carpool
           </h1>
-          <p className="text-gray-600 font-medium">Texas A&M</p>
+          <p className="text-white/90 text-lg font-medium">Safe rides, anytime, anywhere</p>
         </div>
 
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Sign In</h2>
+        {/* Login Card */}
+        <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-10">
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Welcome Back</h2>
+          <p className="text-gray-600 mb-8 text-base">Sign in to continue to your dashboard</p>
 
-        {error && (
-          <div className="bg-red-50 border-2 border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
-            <span className="text-red-500 font-bold">⚠</span>
-            <span className="text-sm">{error}</span>
-          </div>
-        )}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-3">
+              <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={22} />
+              <p className="text-red-700 text-sm font-medium">{error}</p>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-              placeholder="your.email@tamu.edu"
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-gray-900 mb-3">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={22} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-14 pr-4 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 focus:bg-white transition-all outline-none text-lg font-medium"
+                  placeholder="you@tamu.edu"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-gray-900 mb-3">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={22} />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-14 pr-4 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 focus:bg-white transition-all outline-none text-lg font-medium"
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
               disabled={loading}
-            />
+              className="w-full bg-[#79F200] text-gray-900 font-bold py-5 rounded-2xl hover:shadow-2xl hover:shadow-[#79F200]/40 transform hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3 text-lg"
+            >
+              {loading ? (
+                <>
+                  <div className="w-6 h-6 border-3 border-gray-900/30 border-t-gray-900 rounded-full animate-spin"></div>
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight size={24} />
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-8 pt-8 border-t-2 border-gray-100">
+            <p className="text-center text-gray-600 text-base">
+              Don't have an account?{' '}
+              <Link 
+                to="/register" 
+                className="text-[#79F200] hover:text-[#5bc000] font-bold transition-colors"
+              >
+                Sign up here
+              </Link>
+            </p>
           </div>
+        </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-              placeholder="••••••••"
-              disabled={loading}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-lime-500 to-lime-600 text-white rounded-lg hover:from-lime-600 hover:to-lime-700 transition-all font-bold text-lg shadow-lg shadow-lime-500/30 disabled:bg-gray-400 disabled:shadow-none disabled:cursor-not-allowed mt-6"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="mt-6 space-y-2">
-          <p className="text-center text-sm text-gray-600">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-lime-600 hover:text-lime-700 font-bold">
-              Register here
-            </Link>
-          </p>
-          <p className="text-center text-sm text-gray-500">
-            Or contact your director for assistance
-          </p>
+        {/* Footer */}
+        <div className="mt-8 text-center text-white/80 text-sm font-medium">
+          <p>© 2025 TAMU Carpool. All rights reserved.</p>
         </div>
       </div>
     </div>

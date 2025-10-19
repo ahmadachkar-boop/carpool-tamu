@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import { Car } from 'lucide-react';
+import { User, Mail, Lock, Phone, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -69,7 +69,7 @@ const Register = () => {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        role: 'member', // Default role
+        role: 'member',
         gender: formData.gender,
         pronouns: formData.pronouns,
         address: formData.address,
@@ -91,10 +91,8 @@ const Register = () => {
       console.error('Registration error:', error);
       if (error.code === 'auth/email-already-in-use') {
         setError('This email is already registered');
-      } else if (error.code === 'auth/invalid-email') {
-        setError('Invalid email address');
       } else {
-        setError('Registration failed: ' + error.message);
+        setError('Error creating account: ' + error.message);
       }
     } finally {
       setLoading(false);
@@ -102,288 +100,276 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-lime-400 via-lime-500 to-lime-600 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 overflow-hidden">
-        <div className="p-8 bg-gradient-to-r from-lime-500 to-lime-600">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg">
-              <Car className="text-lime-600" size={28} strokeWidth={2.5} />
-            </div>
-            <h1 className="text-3xl font-bold text-white">Join CARPOOL</h1>
+    <div className="min-h-screen bg-[#79F200] py-8 px-4 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-20 left-20 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
+      </div>
+      
+      <div className="max-w-4xl mx-auto relative z-10">
+        {/* Back Button */}
+        <Link 
+          to="/login"
+          className="inline-flex items-center gap-2 text-white hover:text-white/80 mb-6 transition font-semibold text-lg"
+        >
+          <ArrowLeft size={24} />
+          <span>Back to Login</span>
+        </Link>
+
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6 p-4">
+            <img 
+              src={`${process.env.PUBLIC_URL}/logo.png`}
+              alt="TAMU Carpool Logo" 
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('Logo failed to load');
+                e.target.style.display = 'none';
+              }}
+            />
           </div>
-          <p className="text-lime-50 text-center font-medium">Texas A&M University</p>
+          <h1 className="text-5xl md:text-6xl font-black text-white mb-3 drop-shadow-lg">
+            Join TAMU Carpool
+          </h1>
+          <p className="text-white/90 text-lg font-medium">Create your account to get started</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+        {/* Registration Form */}
+        <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-10">
           {error && (
-            <div className="bg-red-50 border-2 border-red-400 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
-              <span className="text-red-500 font-bold">⚠</span>
-              <span className="text-sm">{error}</span>
+            <div className="mb-8 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-3">
+              <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={22} />
+              <p className="text-red-700 text-sm font-medium">{error}</p>
             </div>
           )}
 
-          {/* Basic Information */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">1</span>
-              Basic Information
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  required
-                />
-              </div>
+          <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Required Information */}
+            <div>
+              <h3 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-3 pb-4 border-b-4 border-[#79F200]">
+                <div className="w-10 h-10 bg-[#79F200] rounded-xl flex items-center justify-center">
+                  <CheckCircle className="text-white" size={24} />
+                </div>
+                Required Information
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Full Name *</label>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="John Doe"
+                      required
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  required
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Email *</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="you@tamu.edu"
+                      required
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Password *
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  required
-                  minLength="6"
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Password *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="password"
+                      name="password"
+                      value={formData.password}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="Min. 6 characters"
+                      required
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Confirm Password *
-                </label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  required
-                  minLength="6"
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Confirm Password *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="password"
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="Re-enter password"
+                      required
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  required
-                />
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Phone Number *</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="(555) 123-4567"
+                      required
+                    />
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Gender
-                </label>
+            {/* Optional Information */}
+            <div>
+              <h3 className="text-2xl font-black text-gray-900 mb-6 pb-4 border-b-4 border-gray-200">Optional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <input
                   type="text"
                   name="gender"
                   value={formData.gender}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  placeholder="e.g., Male, Female, Non-binary"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Gender"
                 />
-              </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Pronouns
-                </label>
                 <input
                   type="text"
                   name="pronouns"
                   value={formData.pronouns}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  placeholder="e.g., he/him, she/her, they/them"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Pronouns"
                 />
-              </div>
-            </div>
-          </div>
 
-          {/* Address */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">2</span>
-              Address
-            </h3>
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Street Address
-                </label>
                 <input
                   type="text"
                   name="address"
                   value={formData.address}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Street Address"
                 />
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  />
-                </div>
+                <input
+                  type="text"
+                  name="city"
+                  value={formData.city}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="City"
+                />
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    name="state"
-                    value={formData.state}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  />
-                </div>
+                <input
+                  type="text"
+                  name="state"
+                  value={formData.state}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="State"
+                />
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ZIP Code
-                  </label>
-                  <input
-                    type="text"
-                    name="zip"
-                    value={formData.zip}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+                <input
+                  type="text"
+                  name="zip"
+                  value={formData.zip}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="ZIP Code"
+                />
 
-          {/* Emergency Contact */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">3</span>
-              Emergency Contact
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Contact Name
-                </label>
                 <input
                   type="text"
                   name="emergencyContact"
                   value={formData.emergencyContact}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Emergency Contact Name"
                 />
-              </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Contact Phone
-                </label>
                 <input
                   type="tel"
                   name="emergencyPhone"
                   value={formData.emergencyPhone}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Emergency Contact Phone"
                 />
-              </div>
-            </div>
-          </div>
 
-          {/* Additional Information */}
-          <div>
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 bg-lime-100 text-lime-700 rounded-lg flex items-center justify-center text-sm font-bold">4</span>
-              Additional Information
-            </h3>
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Car Information
-                </label>
                 <input
                   type="text"
                   name="carInfo"
                   value={formData.carInfo}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  placeholder="e.g., 2020 Honda Civic, Blue, ABC-1234"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Car Info (Make, Model, Year)"
                 />
-              </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Dietary Restrictions
-                </label>
                 <input
                   type="text"
                   name="dietaryRestrictions"
                   value={formData.dietaryRestrictions}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-lime-500 focus:border-lime-500 transition-all"
-                  placeholder="e.g., Vegetarian, Gluten-free, None"
+                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="Dietary Restrictions"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Submit Button */}
-          <div className="pt-4">
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-4 bg-gradient-to-r from-lime-500 to-lime-600 text-white font-bold text-lg rounded-lg hover:from-lime-600 hover:to-lime-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all shadow-lg shadow-lime-500/30 disabled:shadow-none"
+              className="w-full bg-[#79F200] text-gray-900 font-black py-5 rounded-2xl hover:shadow-2xl hover:shadow-[#79F200]/40 transform hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3 text-lg"
             >
-              {loading ? 'Creating Account...' : 'Register'}
+              {loading ? (
+                <>
+                  <div className="w-6 h-6 border-3 border-gray-900/30 border-t-gray-900 rounded-full animate-spin"></div>
+                  <span>Creating Account...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={24} />
+                  <span>Create Account</span>
+                </>
+              )}
             </button>
-          </div>
+          </form>
 
-          <div className="text-center text-sm text-gray-600">
-            Already have an account?{' '}
-            <Link to="/login" className="text-lime-600 hover:text-lime-700 font-bold">
-              Login here
-            </Link>
+          <div className="mt-8 pt-8 border-t-2 border-gray-100">
+            <p className="text-center text-gray-600 text-base">
+              Already have an account?{' '}
+              <Link 
+                to="/login" 
+                className="text-[#79F200] hover:text-[#5bc000] font-bold transition-colors"
+              >
+                Sign in here
+              </Link>
+            </p>
           </div>
-        </form>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-white/80 text-sm font-medium">
+          <p>© 2025 TAMU Carpool. All rights reserved.</p>
+        </div>
       </div>
     </div>
   );
