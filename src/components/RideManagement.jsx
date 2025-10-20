@@ -1,45 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, onSnapshot, updateDoc, doc, where, Timestamp } from 'firebase/firestore';
-import { Clock, AlertCircle, Car } from 'lucide-react';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split } from 'lucide-react';
 
 const RideManagement = () => {
+  const { activeNDR, loading: ndrLoading } = useActiveNDR();
+  const [rides, setRides] = useState({ pending: [], active: [], completed: [] });
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
-  const [rides, setRides] = useState({
-    pending: [],
-    active: [],
-    completed: []
-  });
+  const [availableCars, setAvailableCars] = useState(0);
   const [editingRide, setEditingRide] = useState(null);
   const [assigningRide, setAssigningRide] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const { activeNDR, loading: ndrLoading } = useActiveNDR();
+  const [splittingRide, setSplittingRide] = useState(null);
+  const [splitRiders, setSplitRiders] = useState({ ride1: 1, ride2: 1 });
 
-  const availableCars = activeNDR?.availableCars || 0;
-
-  // Update current time every 30 seconds to refresh live timers
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 30000);
+    if (!activeNDR) return;
+    setAvailableCars(activeNDR.availableCars || 0);
+  }, [activeNDR]);
 
-    return () => clearInterval(timer);
-  }, []);
-
-  // Setup ride listeners
   useEffect(() => {
     if (!activeNDR) {
       setLoading(false);
       return;
     }
 
-    let unsubPending, unsubActive, unsubCompleted;
-    
     const ridesRef = collection(db, 'rides');
+    let unsubPending, unsubActive, unsubCompleted;
 
-    // Pending rides listener
     const pendingQuery = query(ridesRef, where('status', '==', 'pending'), where('ndrId', '==', activeNDR.id));
     unsubPending = onSnapshot(pendingQuery, 
       (snapshot) => {
@@ -61,7 +50,6 @@ const RideManagement = () => {
       }
     );
 
-    // Active rides listener
     const activeQuery = query(ridesRef, where('status', '==', 'active'), where('ndrId', '==', activeNDR.id));
     unsubActive = onSnapshot(activeQuery, 
       (snapshot) => {
@@ -83,7 +71,6 @@ const RideManagement = () => {
       }
     );
 
-    // Completed rides listener
     const completedQuery = query(ridesRef, where('status', 'in', ['completed', 'cancelled', 'terminated']), where('ndrId', '==', activeNDR.id));
     unsubCompleted = onSnapshot(completedQuery, 
       (snapshot) => {
@@ -113,68 +100,30 @@ const RideManagement = () => {
     };
   }, [activeNDR]);
 
-  // Calculate time durations
-  const calculateWaitTime = (requestedAt, assignedAt) => {
-    if (!requestedAt || !assignedAt) return null;
-    const diff = Math.floor((assignedAt - requestedAt) / 1000 / 60);
-    return diff;
-  };
-
-  const calculateRideTime = (pickedUpAt, completedAt) => {
-    if (!pickedUpAt || !completedAt) return null;
-    const diff = Math.floor((completedAt - pickedUpAt) / 1000 / 60);
-    return diff;
-  };
-
-  const calculateTotalTime = (requestedAt, completedAt) => {
-    if (!requestedAt || !completedAt) return null;
-    const diff = Math.floor((completedAt - requestedAt) / 1000 / 60);
-    return diff;
-  };
-
-  const getCurrentWaitTime = (requestedAt) => {
-    if (!requestedAt) return 0;
-    const diff = Math.floor((currentTime - requestedAt) / 1000 / 60);
-    return diff;
-  };
-
-  const getCurrentRideTime = (pickedUpAt) => {
-    if (!pickedUpAt) return 0;
-    const diff = Math.floor((currentTime - pickedUpAt) / 1000 / 60);
-    return diff;
-  };
-
-  const formatDuration = (minutes) => {
-    if (minutes === null || minutes === undefined) return 'N/A';
-    if (minutes < 1) return '< 1m';
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
-
-  const getWaitTimeColor = (minutes) => {
-    if (minutes < 5) return 'text-green-600';
-    if (minutes < 10) return 'text-yellow-600';
-    if (minutes < 15) return 'text-orange-600';
-    return 'text-red-600';
-  };
-
   const openAssignCar = (ride) => {
-    if (availableCars === 0) {
-      alert('No cars are available for this event. Please update the car count in NDR Assignments.');
+    setAssigningRide({ ...ride, selectedCar: '' });
+  };
+
+  const assignCar = async () => {
+    if (!assigningRide || !assigningRide.selectedCar) {
+      alert('Please select a car number');
       return;
     }
-    setAssigningRide(ride);
-  };
 
-  const assignCar = async (rideId, carNumber) => {
     try {
-      await updateDoc(doc(db, 'rides', rideId), {
-        carNumber: carNumber,
+      const carNumber = parseInt(assigningRide.selectedCar);
+      const ndrDoc = await getDoc(doc(db, 'ndrs', activeNDR.id));
+      const cars = ndrDoc.data().cars || [];
+      const carInfo = cars.find(c => c.carNumber === carNumber);
+
+      await updateDoc(doc(db, 'rides', assigningRide.id), {
         status: 'active',
+        carNumber: carNumber,
+        assignedDriver: carInfo ? `${carInfo.driverName}` : 'Unknown Driver',
+        carInfo: carInfo || null,
         assignedAt: Timestamp.now()
       });
+
       setAssigningRide(null);
     } catch (error) {
       console.error('Error assigning car:', error);
@@ -242,7 +191,10 @@ const RideManagement = () => {
   };
 
   const startEdit = (ride) => {
-    setEditingRide({...ride});
+    setEditingRide({
+      ...ride,
+      dropoffs: ride.dropoffs || [ride.dropoff] // Handle legacy single dropoff
+    });
   };
 
   const saveEdit = async () => {
@@ -253,7 +205,7 @@ const RideManagement = () => {
         patronName: editingRide.patronName,
         phone: editingRide.phone,
         pickup: editingRide.pickup,
-        dropoff: editingRide.dropoff,
+        dropoffs: editingRide.dropoffs,
         riders: editingRide.riders
       });
       setEditingRide(null);
@@ -261,6 +213,93 @@ const RideManagement = () => {
       console.error('Error updating ride:', error);
       alert('Error updating ride: ' + error.message);
     }
+  };
+
+  const openSplitRide = (ride) => {
+    if (ride.riders < 2) {
+      alert('Cannot split a ride with less than 2 riders');
+      return;
+    }
+    setSplittingRide(ride);
+    setSplitRiders({ ride1: 1, ride2: ride.riders - 1 });
+  };
+
+  const handleSplitRide = async () => {
+    if (!splittingRide) return;
+
+    const totalRiders = splitRiders.ride1 + splitRiders.ride2;
+    if (totalRiders !== splittingRide.riders) {
+      alert(`Split must equal total riders (${splittingRide.riders})`);
+      return;
+    }
+
+    if (splitRiders.ride1 < 1 || splitRiders.ride2 < 1) {
+      alert('Each ride must have at least 1 rider');
+      return;
+    }
+
+    try {
+      // Update original ride with first group of riders
+      await updateDoc(doc(db, 'rides', splittingRide.id), {
+        riders: splitRiders.ride1,
+        splitFrom: splittingRide.id,
+        splitNote: `Split into 2 rides: ${splitRiders.ride1} + ${splitRiders.ride2} riders`
+      });
+
+      // Create new ride with second group of riders
+      const newRideData = {
+        patronName: splittingRide.patronName,
+        phone: splittingRide.phone,
+        pickup: splittingRide.pickup,
+        dropoffs: splittingRide.dropoffs || [splittingRide.dropoff],
+        riders: splitRiders.ride2,
+        status: splittingRide.status,
+        carNumber: null,
+        assignedDriver: null,
+        requestedAt: Timestamp.now(),
+        completedAt: null,
+        willingToCombine: false,
+        carInfo: null,
+        requestType: 'split',
+        ndrId: activeNDR.id,
+        eventId: activeNDR.eventId,
+        pickupCoordinates: splittingRide.pickupCoordinates || null,
+        dropoffCoordinates: splittingRide.dropoffCoordinates || null,
+        splitFrom: splittingRide.id,
+        splitNote: `Split from original ride: ${splitRiders.ride1} + ${splitRiders.ride2} riders`
+      };
+
+      await addDoc(collection(db, 'rides'), newRideData);
+
+      alert('Ride split successfully!');
+      setSplittingRide(null);
+      setSplitRiders({ ride1: 1, ride2: 1 });
+    } catch (error) {
+      console.error('Error splitting ride:', error);
+      alert('Error splitting ride: ' + error.message);
+    }
+  };
+
+  const updateDropoff = (index, value) => {
+    const newDropoffs = [...editingRide.dropoffs];
+    newDropoffs[index] = value;
+    setEditingRide({ ...editingRide, dropoffs: newDropoffs });
+  };
+
+  const addDropoffToEdit = () => {
+    setEditingRide({ 
+      ...editingRide, 
+      dropoffs: [...editingRide.dropoffs, ''] 
+    });
+  };
+
+  const removeDropoffFromEdit = (index) => {
+    if (editingRide.dropoffs.length <= 1) {
+      alert('Ride must have at least one dropoff location');
+      return;
+    }
+    const newDropoffs = editingRide.dropoffs.filter((_, i) => i !== index);
+    setEditingRide({ ...editingRide, dropoffs: newDropoffs });
   };
 
   const formatTime = (date) => {
@@ -287,7 +326,6 @@ const RideManagement = () => {
     return badges[status] || 'bg-gray-100 text-gray-800';
   };
 
-  // Show loading while checking for NDR
   if (ndrLoading) {
     return (
       <div className="space-y-6">
@@ -299,7 +337,6 @@ const RideManagement = () => {
     );
   }
 
-  // Show gate if no active NDR
   if (!activeNDR) {
     return (
       <div className="space-y-6">
@@ -318,7 +355,6 @@ const RideManagement = () => {
     );
   }
 
-  // Show loading while fetching rides
   if (loading) {
     return (
       <div className="space-y-6">
@@ -330,7 +366,6 @@ const RideManagement = () => {
     );
   }
 
-  // Main ride management interface
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -355,24 +390,24 @@ const RideManagement = () => {
           </p>
         </div>
       )}
-      
-      <div className="bg-white rounded-lg shadow">
-        <div className="flex border-b">
+
+      <div className="bg-white rounded-lg shadow border border-gray-200">
+        <div className="flex border-b border-gray-200">
           <button
             onClick={() => setActiveTab('pending')}
-            className={`flex-1 py-3 px-4 text-center ${activeTab === 'pending' ? 'border-b-2 border-red-600 text-red-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'pending' ? 'border-b-2 border-blue-600 text-blue-600 font-medium' : 'text-gray-600'}`}
           >
             Pending ({rides.pending.length})
           </button>
           <button
             onClick={() => setActiveTab('active')}
-            className={`flex-1 py-3 px-4 text-center ${activeTab === 'active' ? 'border-b-2 border-blue-600 text-blue-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'active' ? 'border-b-2 border-purple-600 text-purple-600 font-medium' : 'text-gray-600'}`}
           >
             Active ({rides.active.length})
           </button>
           <button
             onClick={() => setActiveTab('completed')}
-            className={`flex-1 py-3 px-4 text-center ${activeTab === 'completed' ? 'border-b-2 border-green-600 text-green-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'completed' ? 'border-b-2 border-green-600 text-green-600 font-medium' : 'text-gray-600'}`}
           >
             History ({rides.completed.length})
           </button>
@@ -387,6 +422,7 @@ const RideManagement = () => {
             rides[activeTab].map(ride => (
               <div key={ride.id} className="mb-4 p-4 border border-gray-200 rounded-lg">
                 {editingRide?.id === ride.id ? (
+                  /* EDIT MODE */
                   <div className="space-y-3">
                     <input
                       type="text"
@@ -409,13 +445,38 @@ const RideManagement = () => {
                       className="w-full px-3 py-2 border rounded"
                       placeholder="Pickup"
                     />
-                    <input
-                      type="text"
-                      value={editingRide.dropoff}
-                      onChange={(e) => setEditingRide({...editingRide, dropoff: e.target.value})}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder="Dropoff"
-                    />
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Dropoff Locations
+                      </label>
+                      {editingRide.dropoffs.map((dropoff, index) => (
+                        <div key={index} className="flex gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={dropoff}
+                            onChange={(e) => updateDropoff(index, e.target.value)}
+                            className="flex-1 px-3 py-2 border rounded"
+                            placeholder={`Dropoff ${index + 1}`}
+                          />
+                          {editingRide.dropoffs.length > 1 && (
+                            <button
+                              onClick={() => removeDropoffFromEdit(index)}
+                              className="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={addDropoffToEdit}
+                        className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
+                      >
+                        + Add Dropoff
+                      </button>
+                    </div>
+
                     <input
                       type="number"
                       value={editingRide.riders}
@@ -439,142 +500,102 @@ const RideManagement = () => {
                     </div>
                   </div>
                 ) : assigningRide?.id === ride.id ? (
+                  /* CAR ASSIGNMENT MODE */
                   <div className="space-y-3">
-                    <h4 className="font-semibold text-lg mb-2">Assign Car to {ride.patronName}</h4>
-                    <p className="text-sm text-gray-600 mb-3">Select which car will handle this ride:</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                      {Array.from({ length: availableCars }, (_, i) => i + 1).map(carNum => (
-                        <button
-                          key={carNum}
-                          onClick={() => assignCar(ride.id, carNum)}
-                          className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold text-lg transition"
-                        >
-                          Car {carNum}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => setAssigningRide(null)}
-                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 mt-2"
+                    <p className="font-semibold">Assign car to {ride.patronName}</p>
+                    <select
+                      value={assigningRide.selectedCar}
+                      onChange={(e) => setAssigningRide({...assigningRide, selectedCar: e.target.value})}
+                      className="w-full px-3 py-2 border rounded"
                     >
-                      Cancel
-                    </button>
+                      <option value="">Select a car...</option>
+                      {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => (
+                        <option key={num} value={num}>Car {num}</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={assignCar}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Assign
+                      </button>
+                      <button
+                        onClick={() => setAssigningRide(null)}
+                        className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 ) : (
+                  /* NORMAL DISPLAY MODE */
                   <>
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h4 className="font-semibold text-lg">{ride.patronName}</h4>
-                        <p className="text-gray-600 text-sm">{ride.phone}</p>
-                        <p className="text-gray-500 text-xs">Requested: {formatTime(ride.requestedAt)}</p>
+                        <h3 className="text-lg font-bold text-gray-900">{ride.patronName}</h3>
+                        <p className="text-sm text-gray-600 flex items-center gap-1">
+                          <Phone size={14} />
+                          {ride.phone}
+                        </p>
+                        <p className="text-sm text-gray-600 flex items-center gap-1">
+                          <Users size={14} />
+                          {ride.riders} {ride.riders === 1 ? 'Rider' : 'Riders'}
+                        </p>
+                        {ride.splitNote && (
+                          <p className="text-xs text-purple-600 mt-1 flex items-center gap-1">
+                            <Split size={12} />
+                            {ride.splitNote}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
-                        <span className="px-3 py-1 bg-gray-100 rounded-full text-sm block mb-1">
-                          {ride.riders} {ride.riders === 1 ? 'rider' : 'riders'}
-                        </span>
-                        {activeTab === 'completed' && (
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(ride.status)}`}>
-                            {ride.status.toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                      <div>
-                        <p className="text-xs text-gray-500">Pickup</p>
-                        <p className="text-sm font-medium">{ride.pickup}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Dropoff</p>
-                        <p className="text-sm font-medium">{ride.dropoff}</p>
-                      </div>
-                    </div>
-
-                    {/* PENDING TAB - Show live wait time with pulsing animation */}
-                    {activeTab === 'pending' && (
-                      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded mb-3">
-                        <div className="flex items-center gap-2">
-                          <Clock className="text-yellow-600 animate-pulse" size={20} />
-                          <p className={`text-lg font-semibold ${getWaitTimeColor(getCurrentWaitTime(ride.requestedAt))}`}>
-                            Waiting: {formatDuration(getCurrentWaitTime(ride.requestedAt))}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ACTIVE TAB - Show car, wait time, and live ride time */}
-                    {activeTab === 'active' && (
-                      <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded mb-3 space-y-2">
-                        {ride.carNumber && (
-                          <p className="text-sm">
-                            <span className="font-semibold">Car:</span> #{ride.carNumber}
-                          </p>
-                        )}
-                        {ride.assignedAt && (
-                          <p className="text-sm">
-                            <span className="font-semibold">Assigned:</span> {formatTime(ride.assignedAt)} 
-                            <span className="text-gray-600"> (waited {formatDuration(calculateWaitTime(ride.requestedAt, ride.assignedAt))})</span>
-                          </p>
-                        )}
-                        {ride.pickedUpAt ? (
-                          <div className="flex items-center gap-2">
-                            <Clock className="text-blue-600 animate-pulse" size={18} />
-                            <p className="text-sm font-semibold text-blue-700">
-                              In car: {formatDuration(getCurrentRideTime(ride.pickedUpAt))}
-                            </p>
-                            <span className="text-xs text-gray-600">(picked up at {formatTime(ride.pickedUpAt)})</span>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-orange-600 font-medium">
-                            ⚠️ En route to pickup location
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* COMPLETED TAB - Show all statistics */}
-                    {activeTab === 'completed' && (
-                      <div className="bg-gray-50 p-3 rounded mb-3 space-y-2">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                          <div>
-                            <p className="text-xs text-gray-500">Call Time</p>
-                            <p className="font-medium">{formatTime(ride.requestedAt)}</p>
-                          </div>
-                          {ride.assignedAt && (
-                            <div>
-                              <p className="text-xs text-gray-500">Wait Time</p>
-                              <p className="font-medium">{formatDuration(calculateWaitTime(ride.requestedAt, ride.assignedAt))}</p>
-                            </div>
-                          )}
-                          {ride.pickedUpAt && ride.completedAt && (
-                            <div>
-                              <p className="text-xs text-gray-500">Ride Time</p>
-                              <p className="font-medium">{formatDuration(calculateRideTime(ride.pickedUpAt, ride.completedAt))}</p>
-                            </div>
-                          )}
-                          {ride.completedAt && (
-                            <div>
-                              <p className="text-xs text-gray-500">Total Time</p>
-                              <p className="font-medium">{formatDuration(calculateTotalTime(ride.requestedAt, ride.completedAt))}</p>
-                            </div>
-                          )}
-                        </div>
-                        {ride.carNumber && (
-                          <p className="text-sm">
-                            <span className="font-semibold">Car:</span> #{ride.carNumber}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-500">
-                          Completed: {formatDateTime(ride.completedAt)}
+                        <p className="text-xs text-gray-500 flex items-center gap-1 justify-end">
+                          <Clock size={12} />
+                          {formatTime(ride.requestedAt)}
                         </p>
+                        {ride.carNumber && (
+                          <p className="text-sm font-semibold text-blue-600 mt-1">
+                            Car {ride.carNumber}
+                          </p>
+                        )}
+                        {ride.assignedDriver && (
+                          <p className="text-xs text-gray-600">
+                            {ride.assignedDriver}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 rounded p-3 mb-3 space-y-2">
+                      <p className="text-sm flex items-start gap-2">
+                        <MapPin size={16} className="text-green-600 mt-0.5 flex-shrink-0" />
+                        <span><span className="font-semibold">Pickup:</span> {ride.pickup}</span>
+                      </p>
+                      {(ride.dropoffs || [ride.dropoff]).map((dropoff, index) => (
+                        <p key={index} className="text-sm flex items-start gap-2">
+                          <MapPin size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+                          <span>
+                            <span className="font-semibold">
+                              Dropoff {(ride.dropoffs || [ride.dropoff]).length > 1 ? `${index + 1}` : ''}:
+                            </span> {dropoff}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+
+                    {activeTab === 'completed' && (
+                      <div className="mb-3">
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(ride.status)}`}>
+                          {ride.status.toUpperCase()}
+                        </span>
                         {ride.cancellationReason && (
-                          <p className="text-sm text-red-600">
+                          <p className="text-xs text-gray-600 mt-2">
                             <span className="font-semibold">Cancelled:</span> {ride.cancellationReason}
                           </p>
                         )}
                         {ride.terminationReason && (
-                          <p className="text-sm text-orange-600">
+                          <p className="text-xs text-gray-600 mt-2">
                             <span className="font-semibold">Terminated:</span> {ride.terminationReason}
                           </p>
                         )}
@@ -590,6 +611,13 @@ const RideManagement = () => {
                             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                           >
                             Assign Car
+                          </button>
+                          <button
+                            onClick={() => openSplitRide(ride)}
+                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
+                          >
+                            <Split size={16} />
+                            Split Riders
                           </button>
                           <button
                             onClick={() => startEdit(ride)}
@@ -622,6 +650,13 @@ const RideManagement = () => {
                             Complete Ride
                           </button>
                           <button
+                            onClick={() => openSplitRide(ride)}
+                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
+                          >
+                            <Split size={16} />
+                            Split Riders
+                          </button>
+                          <button
                             onClick={() => startEdit(ride)}
                             className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
                           >
@@ -649,6 +684,87 @@ const RideManagement = () => {
           )}
         </div>
       </div>
+
+      {/* Split Ride Modal */}
+      {splittingRide && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Split size={24} className="text-purple-600" />
+              Split Ride: {splittingRide.patronName}
+            </h3>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-blue-800">
+                Total Riders: <span className="font-bold">{splittingRide.riders}</span>
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Split into two separate rides. Useful when a car needs to make multiple trips or riders need to go at different times.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  First Ride - Number of Riders
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={splittingRide.riders - 1}
+                  value={splitRiders.ride1}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    setSplitRiders({ ride1: val, ride2: splittingRide.riders - val });
+                  }}
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Second Ride - Number of Riders
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={splittingRide.riders - 1}
+                  value={splitRiders.ride2}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    setSplitRiders({ ride1: splittingRide.riders - val, ride2: val });
+                  }}
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold">Result:</span> Ride 1 will have {splitRiders.ride1} {splitRiders.ride1 === 1 ? 'rider' : 'riders'}, Ride 2 will have {splitRiders.ride2} {splitRiders.ride2 === 1 ? 'rider' : 'riders'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSplitRide}
+                className="flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
+              >
+                Split Ride
+              </button>
+              <button
+                onClick={() => {
+                  setSplittingRide(null);
+                  setSplitRiders({ ride1: 1, ride2: 1 });
+                }}
+                className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

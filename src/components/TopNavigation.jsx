@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Calendar, Users, Phone, Car, Home, ClipboardList, PlusCircle, LogOut, ChevronDown, Menu, X, Shield, Megaphone, UserCircle } from 'lucide-react';
+import { Calendar, Users, Phone, Car, Home, ClipboardList, PlusCircle, LogOut, ChevronDown, Menu, X, Shield, Megaphone, UserCircle, MessageSquare } from 'lucide-react';
 import { useActiveNDR } from '../ActiveNDRContext';
 
 
@@ -18,6 +18,7 @@ const TopNavigation = ({ user, logout }) => {
     { path: '/', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member', 'admin'] },
     { path: '/phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member', 'admin'] },
     { path: '/ride-management', icon: Car, label: 'Ride Management', roles: ['director', 'deputy', 'member', 'admin'] },
+    { path: '/couch-navigator', icon: MessageSquare, label: 'Couch Navigator', roles: ['director', 'deputy', 'member', 'admin'] },
     { path: '/calendar', icon: Calendar, label: 'Calendar', roles: ['director', 'deputy', 'member', 'admin'] },
   ];
 
@@ -27,10 +28,8 @@ const TopNavigation = ({ user, logout }) => {
     { path: '/members', icon: Users, label: 'Members', roles: ['director', 'deputy', 'admin'] },
     { path: '/address-blacklist', icon: Shield, label: 'Blacklist Manager', roles: ['director', 'deputy', 'admin'] },
     { path: '/announcements', icon: Megaphone, label: 'Announcements', roles: ['director', 'deputy', 'admin'] },
-    { path: '/admin-panel', icon: Shield, label: 'Admin Panel', roles: ['admin'] }, // NEW: Admin-only page
+    { path: '/admin-panel', icon: Shield, label: 'Admin Panel', roles: ['admin'] },
   ];
-
-
 
   // Filter items based on role only
   const filteredItems = navItems.filter(item => item.roles.includes(user?.role));

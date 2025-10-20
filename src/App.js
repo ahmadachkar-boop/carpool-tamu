@@ -17,6 +17,7 @@ import AddressBlacklistManager from './components/AddressBlacklistManager';
 import AnnouncementsManager from './components/AnnouncementsManager';
 import MemberProfile from './components/MemberProfile';
 import AdminPanel from './components/AdminPanel';
+import CouchNavigator from './components/CouchNavigator';
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -187,6 +188,13 @@ function AppContent() {
           <ProtectedRoute adminOnly={true}>
             <AppLayout>
               <AdminPanel />
+            </AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/couch-navigator" element={
+          <ProtectedRoute>
+            <AppLayout>
+              <CouchNavigator />
             </AppLayout>
           </ProtectedRoute>
         } />

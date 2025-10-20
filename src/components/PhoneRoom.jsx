@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, query, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { AlertCircle, Phone, MapPin, Users, Send, CheckCircle, XCircle, Shield, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Phone, MapPin, Users, Send, CheckCircle, XCircle, Shield, AlertTriangle, Plus, X } from 'lucide-react';
 import { useLoadScript } from '@react-google-maps/api';
 
 const libraries = ['places'];
@@ -11,7 +11,6 @@ const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 const PhoneRoom = () => {
   const { activeNDR, loading } = useActiveNDR();
   
-  // Phone number formatting function
   const formatPhoneNumber = (value) => {
     const cleaned = value.replace(/\D/g, '');
     const limited = cleaned.slice(0, 10);
@@ -25,19 +24,14 @@ const PhoneRoom = () => {
     }
   };
 
-  // Filter blacklists to only show active ones for current NDR
   const getActiveBlacklists = (blacklists, type) => {
     if (!activeNDR) return [];
     
     return blacklists.filter(item => {
-      // Permanent blacklists are always active
       if (item.scope === 'permanent') return true;
-      
-      // Temporary blacklists must match current NDR
       if (item.scope === 'temporary') {
         return item.ndrId === activeNDR.id;
       }
-      
       return false;
     });
   };
@@ -46,7 +40,7 @@ const PhoneRoom = () => {
     name: '',
     phone: '',
     pickup: '',
-    dropoff: '',
+    dropoffs: [''],
     riders: 1
   });
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -54,14 +48,13 @@ const PhoneRoom = () => {
   const [messageType, setMessageType] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   
-  // Blacklist states
   const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const [showBlacklistViewer, setShowBlacklistViewer] = useState(false);
   const [blacklistRequest, setBlacklistRequest] = useState({
-    type: 'address', // 'address' or 'phone'
-    value: '', // address or phone number
+    type: 'address',
+    value: '',
     reason: '',
-    scope: 'permanent', // 'permanent' or 'temporary'
+    scope: 'permanent',
     appliesToPickup: true,
     appliesToDropoff: true
   });
@@ -71,31 +64,25 @@ const PhoneRoom = () => {
   const [blacklistAddressSuggestions, setBlacklistAddressSuggestions] = useState([]);
   const [showBlacklistSuggestions, setShowBlacklistSuggestions] = useState(false);
   const blacklistAddressRef = useRef(null);
-  const [viewerTab, setViewerTab] = useState('addresses'); // 'addresses' or 'phones'
+  const [viewerTab, setViewerTab] = useState('addresses');
   
-  // Autocomplete states
   const [pickupSuggestions, setPickupSuggestions] = useState([]);
-  const [dropoffSuggestions, setDropoffSuggestions] = useState([]);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState([[]]);
   const [showPickupSuggestions, setShowPickupSuggestions] = useState(false);
-  const [showDropoffSuggestions, setShowDropoffSuggestions] = useState(false);
+  const [showDropoffSuggestions, setShowDropoffSuggestions] = useState([false]);
   const pickupRef = useRef(null);
-  const dropoffRef = useRef(null);
+  const dropoffRefs = useRef([]);
   const autocompleteService = useRef(null);
 
-  // Load Google Maps Script
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: GOOGLE_API_KEY,
     libraries: libraries,
   });
 
-  // Bryan/College Station center coordinates
   const BCS_CENTER = { lat: 30.6280, lng: -96.3344 };
-  
-  // Valid Bryan/College Station zip codes
   const VALID_ZIP_CODES = ['77801', '77802', '77803', '77807', '77808', '77840', '77841', '77842', '77843', '77844', '77845'];
   const VALID_CITIES = ['bryan', 'college station', 'college-station'];
 
-  // Mock addresses for fallback when Google API unavailable
   const getMockBCSAddresses = (input) => {
     const mockAddresses = [
       '123 University Dr, College Station, TX 77840',
@@ -108,75 +95,36 @@ const PhoneRoom = () => {
     );
   };
 
-  // Fetch current user information
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      if (auth.currentUser) {
-        const userDoc = await new Promise((resolve) => {
-          const unsubscribe = onSnapshot(
-            query(collection(db, 'members'), where('__name__', '==', auth.currentUser.uid)),
-            (snapshot) => {
-              unsubscribe();
-              if (!snapshot.empty) {
-                resolve(snapshot.docs[0].data());
-              } else {
-                resolve(null);
-              }
-            }
-          );
-        });
-        setCurrentUser(userDoc);
-      }
-    };
-    fetchCurrentUser();
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Initialize Google Places Autocomplete Service
   useEffect(() => {
     if (isLoaded && window.google) {
       autocompleteService.current = new window.google.maps.places.AutocompleteService();
-      console.log('Google Places API loaded successfully');
     }
   }, [isLoaded]);
 
-  // Close suggestions when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (pickupRef.current && !pickupRef.current.contains(event.target)) {
-        setShowPickupSuggestions(false);
-      }
-      if (dropoffRef.current && !dropoffRef.current.contains(event.target)) {
-        setShowDropoffSuggestions(false);
-      }
-      if (blacklistAddressRef.current && !blacklistAddressRef.current.contains(event.target)) {
-        setShowBlacklistSuggestions(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Fetch blacklisted addresses
-  useEffect(() => {
-    const blacklistQuery = query(
+    const addressBlacklistQuery = query(
       collection(db, 'addressBlacklist'),
       where('status', '==', 'approved')
     );
 
-    const unsubscribe = onSnapshot(blacklistQuery, (snapshot) => {
+    const unsubscribe = onSnapshot(addressBlacklistQuery, (snapshot) => {
       const addresses = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setBlacklistedAddresses(addresses);
-      console.log('Loaded blacklisted addresses:', addresses.length);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Fetch blacklisted phone numbers
   useEffect(() => {
     const phoneBlacklistQuery = query(
       collection(db, 'phoneBlacklist'),
@@ -189,13 +137,34 @@ const PhoneRoom = () => {
         ...doc.data()
       }));
       setBlacklistedPhones(phones);
-      console.log('Loaded blacklisted phones:', phones.length);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Fetch address suggestions from Google Places API
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pickupRef.current && !pickupRef.current.contains(event.target)) {
+        setShowPickupSuggestions(false);
+      }
+      
+      dropoffRefs.current.forEach((ref, index) => {
+        if (ref && !ref.contains(event.target)) {
+          const newShowSuggestions = [...showDropoffSuggestions];
+          newShowSuggestions[index] = false;
+          setShowDropoffSuggestions(newShowSuggestions);
+        }
+      });
+
+      if (blacklistAddressRef.current && !blacklistAddressRef.current.contains(event.target)) {
+        setShowBlacklistSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showDropoffSuggestions]);
+
   const fetchAddressSuggestions = async (input, setSuggestions) => {
     if (!input || input.length < 3) {
       setSuggestions([]);
@@ -203,7 +172,6 @@ const PhoneRoom = () => {
     }
 
     if (!isLoaded || !autocompleteService.current) {
-      console.log('Google Places API not loaded yet');
       setSuggestions(getMockBCSAddresses(input));
       return;
     }
@@ -235,7 +203,6 @@ const PhoneRoom = () => {
     }
   };
 
-  // Verify address is in Bryan/College Station
   const verifyAddressInBCS = async (address) => {
     if (!address || address.trim().length === 0) {
       return { valid: false, reason: 'Address is empty' };
@@ -307,7 +274,6 @@ const PhoneRoom = () => {
     };
   };
 
-  // Check if address is blacklisted
   const checkAddressBlacklist = async (address, type) => {
     if (!activeNDR) return { allowed: true };
     
@@ -333,7 +299,6 @@ const PhoneRoom = () => {
           continue;
         }
         
-        // Check if it's a permanent blacklist
         if (blacklisted.scope === 'permanent') {
           return { 
             allowed: false, 
@@ -341,16 +306,13 @@ const PhoneRoom = () => {
           };
         }
         
-        // Check if it's a temporary blacklist for THIS NDR
         if (blacklisted.scope === 'temporary') {
-          // Only block if ndrId matches current NDR or if no ndrId (legacy entry)
           if (!blacklisted.ndrId || blacklisted.ndrId === activeNDR.id) {
             return { 
               allowed: false, 
               reason: `This address is temporarily blacklisted for the current NDR (${blacklisted.reason})`
             };
           }
-          // If ndrId doesn't match, skip this blacklist (it's from a different NDR)
         }
       }
     }
@@ -358,15 +320,62 @@ const PhoneRoom = () => {
     return { allowed: true };
   };
 
-  // Handle form submission
+  const addDropoff = () => {
+    setFormData({
+      ...formData,
+      dropoffs: [...formData.dropoffs, '']
+    });
+    setDropoffSuggestions([...dropoffSuggestions, []]);
+    setShowDropoffSuggestions([...showDropoffSuggestions, false]);
+  };
+
+  const removeDropoff = (index) => {
+    const newDropoffs = formData.dropoffs.filter((_, i) => i !== index);
+    const newDropoffSuggestions = dropoffSuggestions.filter((_, i) => i !== index);
+    const newShowDropoffSuggestions = showDropoffSuggestions.filter((_, i) => i !== index);
+    
+    setFormData({ ...formData, dropoffs: newDropoffs });
+    setDropoffSuggestions(newDropoffSuggestions);
+    setShowDropoffSuggestions(newShowDropoffSuggestions);
+  };
+
+  const handleDropoffChange = (index, value) => {
+    const newDropoffs = [...formData.dropoffs];
+    newDropoffs[index] = value;
+    setFormData({ ...formData, dropoffs: newDropoffs });
+    
+    fetchAddressSuggestions(value, (suggestions) => {
+      const newSuggestions = [...dropoffSuggestions];
+      newSuggestions[index] = suggestions;
+      setDropoffSuggestions(newSuggestions);
+    });
+    
+    const newShowSuggestions = [...showDropoffSuggestions];
+    newShowSuggestions[index] = true;
+    setShowDropoffSuggestions(newShowSuggestions);
+  };
+
+  const selectDropoffSuggestion = (index, address) => {
+    const newDropoffs = [...formData.dropoffs];
+    newDropoffs[index] = address;
+    setFormData({ ...formData, dropoffs: newDropoffs });
+    
+    const newShowSuggestions = [...showDropoffSuggestions];
+    newShowSuggestions[index] = false;
+    setShowDropoffSuggestions(newShowSuggestions);
+    
+    const newSuggestions = [...dropoffSuggestions];
+    newSuggestions[index] = [];
+    setDropoffSuggestions(newSuggestions);
+  };
+
   const handleSubmit = async () => {
-    if (!formData.name || !formData.phone || !formData.pickup || !formData.dropoff) {
+    if (!formData.name || !formData.phone || !formData.pickup || formData.dropoffs.some(d => !d)) {
       setMessage('Please fill in all fields');
       setMessageType('error');
       return;
     }
 
-    // Validate phone number has 10 digits
     const phoneDigits = formData.phone.replace(/\D/g, '');
     if (phoneDigits.length !== 10) {
       setMessage('Please enter a valid 10-digit phone number');
@@ -379,7 +388,6 @@ const PhoneRoom = () => {
     setMessageType('info');
 
     try {
-      // Check phone blacklist first
       const phoneBlacklistRef = collection(db, 'phoneBlacklist');
       const phoneBlacklistQuery = query(
         phoneBlacklistRef, 
@@ -391,7 +399,6 @@ const PhoneRoom = () => {
       if (!phoneBlacklistSnapshot.empty) {
         const blacklistEntry = phoneBlacklistSnapshot.docs[0].data();
         
-        // Check if it's a permanent blacklist
         if (blacklistEntry.scope === 'permanent') {
           setMessage('⛔ This phone number is permanently blacklisted and cannot be used');
           setMessageType('error');
@@ -399,20 +406,16 @@ const PhoneRoom = () => {
           return;
         }
         
-        // Check if it's a temporary blacklist for THIS NDR
         if (blacklistEntry.scope === 'temporary' && activeNDR) {
-          // Only block if ndrId matches current NDR or if no ndrId (legacy entry)
           if (!blacklistEntry.ndrId || blacklistEntry.ndrId === activeNDR.id) {
             setMessage('⛔ This phone number is temporarily blacklisted for the current NDR');
             setMessageType('error');
             setSubmitLoading(false);
             return;
           }
-          // If ndrId doesn't match, this temporary blacklist is from a different NDR - allow it
         }
       }
 
-      // Check pickup address blacklist
       const pickupBlacklistCheck = await checkAddressBlacklist(formData.pickup, 'pickup');
       if (!pickupBlacklistCheck.allowed) {
         setMessage(`⛔ Pickup address is blacklisted: ${pickupBlacklistCheck.reason}`);
@@ -421,18 +424,18 @@ const PhoneRoom = () => {
         return;
       }
 
-      // Check dropoff address blacklist
-      const dropoffBlacklistCheck = await checkAddressBlacklist(formData.dropoff, 'dropoff');
-      if (!dropoffBlacklistCheck.allowed) {
-        setMessage(`⛔ Dropoff address is blacklisted: ${dropoffBlacklistCheck.reason}`);
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
+      for (let i = 0; i < formData.dropoffs.length; i++) {
+        const dropoffBlacklistCheck = await checkAddressBlacklist(formData.dropoffs[i], 'dropoff');
+        if (!dropoffBlacklistCheck.allowed) {
+          setMessage(`⛔ Dropoff ${i + 1} is blacklisted: ${dropoffBlacklistCheck.reason}`);
+          setMessageType('error');
+          setSubmitLoading(false);
+          return;
+        }
       }
 
       setMessage('Validating addresses...');
 
-      // Validate pickup address
       const pickupValidation = await verifyAddressInBCS(formData.pickup);
       if (!pickupValidation.valid) {
         setMessage(`Pickup address rejected: ${pickupValidation.reason}`);
@@ -441,13 +444,16 @@ const PhoneRoom = () => {
         return;
       }
 
-      // Validate dropoff address
-      const dropoffValidation = await verifyAddressInBCS(formData.dropoff);
-      if (!dropoffValidation.valid) {
-        setMessage(`Dropoff address rejected: ${dropoffValidation.reason}`);
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
+      const dropoffValidations = [];
+      for (let i = 0; i < formData.dropoffs.length; i++) {
+        const dropoffValidation = await verifyAddressInBCS(formData.dropoffs[i]);
+        if (!dropoffValidation.valid) {
+          setMessage(`Dropoff ${i + 1} rejected: ${dropoffValidation.reason}`);
+          setMessageType('error');
+          setSubmitLoading(false);
+          return;
+        }
+        dropoffValidations.push(dropoffValidation);
       }
 
       setMessage('Submitting request...');
@@ -456,7 +462,7 @@ const PhoneRoom = () => {
         patronName: formData.name,
         phone: formData.phone,
         pickup: formData.pickup,
-        dropoff: formData.dropoff,
+        dropoffs: formData.dropoffs,
         riders: formData.riders,
         status: 'pending',
         carNumber: null,
@@ -469,12 +475,14 @@ const PhoneRoom = () => {
         ndrId: activeNDR.id,
         eventId: activeNDR.eventId,
         pickupCoordinates: pickupValidation.coordinates || null,
-        dropoffCoordinates: dropoffValidation.coordinates || null
+        dropoffCoordinates: dropoffValidations.map(v => v.coordinates || null)
       });
 
       setMessage('Request submitted successfully!');
       setMessageType('success');
-      setFormData({ name: '', phone: '', pickup: '', dropoff: '', riders: 1 });
+      setFormData({ name: '', phone: '', pickup: '', dropoffs: [''], riders: 1 });
+      setDropoffSuggestions([[]]);
+      setShowDropoffSuggestions([false]);
       
       setTimeout(() => {
         setMessage('');
@@ -489,7 +497,6 @@ const PhoneRoom = () => {
     }
   };
 
-  // Handle blacklist request submission
   const handleBlacklistRequest = async () => {
     if (!blacklistRequest.value || !blacklistRequest.reason) {
       setMessage('Please fill in all required fields');
@@ -497,7 +504,6 @@ const PhoneRoom = () => {
       return;
     }
 
-    // Validate phone number format if type is phone
     if (blacklistRequest.type === 'phone') {
       const phoneRegex = /^[\d\s\-\(\)]+$/;
       if (!phoneRegex.test(blacklistRequest.value)) {
@@ -511,40 +517,28 @@ const PhoneRoom = () => {
 
     try {
       const now = Timestamp.now();
-      
-      // Choose the correct collection based on type
       const collectionName = blacklistRequest.type === 'phone' ? 'phoneBlacklist' : 'addressBlacklist';
       
-      // Build the base document data
-      const documentData = {
+      const blacklistData = {
+        ...(blacklistRequest.type === 'phone' 
+          ? { phone: blacklistRequest.value }
+          : { 
+              address: blacklistRequest.value,
+              appliesToPickup: blacklistRequest.appliesToPickup,
+              appliesToDropoff: blacklistRequest.appliesToDropoff
+            }
+        ),
         reason: blacklistRequest.reason,
         scope: blacklistRequest.scope,
         status: 'pending',
+        requestedBy: currentUser?.uid || 'unknown',
         requestedAt: now,
-        createdAt: now,
-        requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
-        requestedByUid: auth.currentUser?.uid || null,
-        approvedAt: null,
-        approvedBy: null,
-        ndrId: blacklistRequest.scope === 'temporary' ? (activeNDR?.id || null) : null
+        ...(blacklistRequest.scope === 'temporary' && activeNDR ? { ndrId: activeNDR.id } : {})
       };
 
-      // Add type-specific fields
-      if (blacklistRequest.type === 'phone') {
-        documentData.phone = blacklistRequest.value;
-      } else {
-        documentData.address = blacklistRequest.value;
-        documentData.appliesToPickup = blacklistRequest.appliesToPickup;
-        documentData.appliesToDropoff = blacklistRequest.appliesToDropoff;
-      }
+      await addDoc(collection(db, collectionName), blacklistData);
 
-      console.log('Submitting blacklist request:', documentData);
-      
-      const docRef = await addDoc(collection(db, collectionName), documentData);
-      
-      console.log('Blacklist request submitted with ID:', docRef.id);
-
-      setMessage('Blacklist request submitted! Awaiting director approval.');
+      setMessage('Blacklist request submitted. Awaiting director approval.');
       setMessageType('success');
       setBlacklistRequest({ 
         type: 'address',
@@ -575,22 +569,10 @@ const PhoneRoom = () => {
     setShowPickupSuggestions(true);
   };
 
-  const handleDropoffChange = (value) => {
-    setFormData({...formData, dropoff: value});
-    fetchAddressSuggestions(value, setDropoffSuggestions);
-    setShowDropoffSuggestions(true);
-  };
-
   const selectPickupSuggestion = (address) => {
     setFormData({...formData, pickup: address});
     setShowPickupSuggestions(false);
     setPickupSuggestions([]);
-  };
-
-  const selectDropoffSuggestion = (address) => {
-    setFormData({...formData, dropoff: address});
-    setShowDropoffSuggestions(false);
-    setDropoffSuggestions([]);
   };
 
   const handleBlacklistValueChange = (value) => {
@@ -644,7 +626,6 @@ const PhoneRoom = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-0">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Phone Room</h2>
@@ -763,8 +744,7 @@ const PhoneRoom = () => {
                 onChange={(e) => handlePickupChange(e.target.value)}
                 onFocus={() => setShowPickupSuggestions(true)}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
-                placeholder="Start typing address in Bryan/College Station..."
-                autoComplete="off"
+                placeholder="123 Main St, College Station, TX"
               />
               {showPickupSuggestions && pickupSuggestions.length > 0 && (
                 <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
@@ -782,34 +762,69 @@ const PhoneRoom = () => {
               )}
             </div>
 
-            <div className="relative" ref={dropoffRef}>
-              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <MapPin size={16} />
-                Dropoff Location
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <MapPin size={16} />
+                  Dropoff Location(s)
+                </span>
+                <button
+                  type="button"
+                  onClick={addDropoff}
+                  className="px-3 py-1 bg-[#79F200] hover:bg-[#6DD600] text-gray-900 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                >
+                  <Plus size={14} />
+                  Add Dropoff
+                </button>
               </label>
-              <input
-                type="text"
-                value={formData.dropoff}
-                onChange={(e) => handleDropoffChange(e.target.value)}
-                onFocus={() => setShowDropoffSuggestions(true)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
-                placeholder="Start typing address in Bryan/College Station..."
-                autoComplete="off"
-              />
-              {showDropoffSuggestions && dropoffSuggestions.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                  {dropoffSuggestions.map((suggestion, index) => (
-                    <div
-                      key={index}
-                      onClick={() => selectDropoffSuggestion(suggestion)}
-                      className="px-4 py-3 hover:bg-[#79F200]/10 cursor-pointer transition flex items-start gap-2 border-b border-gray-100 last:border-0"
-                    >
-                      <MapPin size={16} className="text-[#79F200] mt-1 flex-shrink-0" />
-                      <span className="text-sm text-gray-900">{suggestion}</span>
+              
+              {formData.dropoffs.map((dropoff, index) => (
+                <div 
+                  key={index} 
+                  className="relative mb-3"
+                  ref={el => dropoffRefs.current[index] = el}
+                >
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        value={dropoff}
+                        onChange={(e) => handleDropoffChange(index, e.target.value)}
+                        onFocus={() => {
+                          const newShowSuggestions = [...showDropoffSuggestions];
+                          newShowSuggestions[index] = true;
+                          setShowDropoffSuggestions(newShowSuggestions);
+                        }}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
+                        placeholder={`Dropoff ${index + 1}: 456 College Ave, Bryan, TX`}
+                      />
+                      {showDropoffSuggestions[index] && dropoffSuggestions[index]?.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                          {dropoffSuggestions[index].map((suggestion, sIndex) => (
+                            <div
+                              key={sIndex}
+                              onClick={() => selectDropoffSuggestion(index, suggestion)}
+                              className="px-4 py-3 hover:bg-[#79F200]/10 cursor-pointer transition flex items-start gap-2 border-b border-gray-100 last:border-0"
+                            >
+                              <MapPin size={16} className="text-[#79F200] mt-1 flex-shrink-0" />
+                              <span className="text-sm text-gray-900">{suggestion}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    {formData.dropoffs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeDropoff(index)}
+                        className="px-3 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl transition flex items-center justify-center"
+                      >
+                        <X size={18} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
 
             <div>
@@ -831,7 +846,7 @@ const PhoneRoom = () => {
               <p className="text-sm text-blue-800 font-medium flex items-start gap-2">
                 <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
                 <span>
-                  You can select any address from suggestions, but addresses outside the service area will be rejected.
+                  You can add multiple dropoff locations for this ride. Addresses outside the service area will be rejected.
                 </span>
               </p>
             </div>
@@ -843,13 +858,13 @@ const PhoneRoom = () => {
             >
               {submitLoading ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-gray-900/30 border-t-gray-900 rounded-full animate-spin"></div>
-                  <span>Submitting...</span>
+                  <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></div>
+                  Processing...
                 </>
               ) : (
                 <>
                   <Send size={20} />
-                  <span>Submit Phone Request</span>
+                  Submit Request
                 </>
               )}
             </button>
@@ -889,7 +904,6 @@ const PhoneRoom = () => {
                 </p>
               </div>
 
-              {/* Type Selection */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">Blacklist Type</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -927,7 +941,6 @@ const PhoneRoom = () => {
                 </div>
               </div>
 
-              {/* Scope Selection */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">Duration</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -941,7 +954,7 @@ const PhoneRoom = () => {
                     }`}
                   >
                     <p className={`font-semibold text-sm ${blacklistRequest.scope === 'permanent' ? 'text-red-700' : 'text-gray-700'}`}>
-                      🔒 Permanent
+                      Permanent
                     </p>
                     <p className="text-xs text-gray-500 mt-1">All future NDRs</p>
                   </button>
@@ -956,56 +969,49 @@ const PhoneRoom = () => {
                     }`}
                   >
                     <p className={`font-semibold text-sm ${blacklistRequest.scope === 'temporary' ? 'text-orange-700' : 'text-gray-700'}`}>
-                      ⏱️ Temporary
+                      Temporary
                     </p>
                     <p className="text-xs text-gray-500 mt-1">Current NDR only</p>
                   </button>
                 </div>
               </div>
 
-              {/* Address-specific options */}
               {blacklistRequest.type === 'address' && (
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-3">Apply To</label>
-                  <div className="space-y-2 bg-gray-50 rounded-xl p-4">
-                    <label className="flex items-center gap-3 cursor-pointer">
+                  <label className="block text-sm font-bold text-gray-700 mb-3">Applies To</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={blacklistRequest.appliesToPickup}
                         onChange={(e) => setBlacklistRequest({...blacklistRequest, appliesToPickup: e.target.checked})}
-                        className="w-5 h-5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                        className="w-4 h-4 text-orange-500 rounded"
                       />
-                      <div className="flex-1">
-                        <span className="text-sm font-semibold text-gray-900">Pickups</span>
-                        <p className="text-xs text-gray-500">Block this address as a pickup location</p>
-                      </div>
+                      <span className="text-sm text-gray-700">Pickup locations</span>
                     </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
+                    <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={blacklistRequest.appliesToDropoff}
                         onChange={(e) => setBlacklistRequest({...blacklistRequest, appliesToDropoff: e.target.checked})}
-                        className="w-5 h-5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                        className="w-4 h-4 text-orange-500 rounded"
                       />
-                      <div className="flex-1">
-                        <span className="text-sm font-semibold text-gray-900">Dropoffs</span>
-                        <p className="text-xs text-gray-500">Block this address as a dropoff location</p>
-                      </div>
+                      <span className="text-sm text-gray-700">Dropoff locations</span>
                     </label>
                   </div>
                 </div>
               )}
 
-              {/* Value Input */}
               <div className="relative" ref={blacklistAddressRef}>
                 <label className="block text-sm font-bold text-gray-700 mb-2">
                   {blacklistRequest.type === 'address' ? 'Address' : 'Phone Number'} *
                 </label>
                 <input
-                  type={blacklistRequest.type === 'phone' ? 'tel' : 'text'}
+                  type="text"
                   value={blacklistRequest.value}
                   onChange={(e) => {
-                    const value = blacklistRequest.type === 'phone' ? formatPhoneNumber(e.target.value) : e.target.value;
+                    const value = blacklistRequest.type === 'phone' ? 
+                      formatPhoneNumber(e.target.value) : e.target.value;
                     handleBlacklistValueChange(value);
                   }}
                   onFocus={() => blacklistRequest.type === 'address' && setShowBlacklistSuggestions(true)}
@@ -1030,7 +1036,6 @@ const PhoneRoom = () => {
                 )}
               </div>
 
-              {/* Reason Input */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">
                   Reason for Blacklist *
@@ -1043,7 +1048,6 @@ const PhoneRoom = () => {
                 />
               </div>
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowBlacklistModal(false)}
@@ -1100,7 +1104,6 @@ const PhoneRoom = () => {
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b border-gray-200 bg-gray-50 px-6">
               <button
                 onClick={() => setViewerTab('addresses')}
@@ -1130,7 +1133,6 @@ const PhoneRoom = () => {
               </button>
             </div>
 
-            {/* Content */}
             {viewerTab === 'addresses' && (
               <div className="flex-1 overflow-y-auto p-6">
                 {getActiveBlacklists(blacklistedAddresses, 'address').length === 0 ? (
