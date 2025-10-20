@@ -6,6 +6,19 @@ import { User, Mail, Phone, MapPin, Car as CarIcon, Award, Calendar, Clock, Edit
 
 const MemberProfile = () => {
   const { userProfile } = useAuth();
+  // Phone number formatting function
+  const formatPhoneNumber = (value) => {
+    const cleaned = value.replace(/\D/g, '');
+    const limited = cleaned.slice(0, 10);
+    
+    if (limited.length <= 3) {
+      return limited;
+    } else if (limited.length <= 6) {
+      return `(${limited.slice(0, 3)}) ${limited.slice(3)}`;
+    } else {
+      return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
+    }
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
   const [memberStats, setMemberStats] = useState({
@@ -279,7 +292,9 @@ const MemberProfile = () => {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    onChange={(e) => setFormData({...formData, phone: formatPhoneNumber(e.target.value)})}
+                    placeholder="(555) 123-4567"
+                    maxLength="14"
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200]"
                   />
                 ) : (

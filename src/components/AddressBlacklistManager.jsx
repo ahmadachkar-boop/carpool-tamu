@@ -3,6 +3,8 @@ import { db, auth } from '../firebase';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, Timestamp, where, orderBy, addDoc } from 'firebase/firestore';
 import { Shield, AlertTriangle, CheckCircle, XCircle, Clock, Trash2, MapPin, Phone } from 'lucide-react';
 import { useAuth } from '../AuthContext';
+import { useActiveNDR } from '../ActiveNDRContext';
+
 
 const AddressBlacklistManager = () => {
   const [requests, setRequests] = useState([]);
@@ -19,6 +21,8 @@ const AddressBlacklistManager = () => {
     appliesToDropoff: true
   });
   const { currentUser, userProfile } = useAuth();
+    const { activeNDR } = useActiveNDR();
+
 
   useEffect(() => {
     setLoading(true);
@@ -70,7 +74,8 @@ const AddressBlacklistManager = () => {
         requestedByUid: auth.currentUser?.uid || null,
         approvedBy: userProfile?.name || auth.currentUser?.email || 'Director',
         approvedByUid: auth.currentUser?.uid || null,
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now(),
+        ndrId: newEntry.scope === 'temporary' ? (activeNDR?.id || null) : null
       };
 
       if (newEntry.type === 'address') {

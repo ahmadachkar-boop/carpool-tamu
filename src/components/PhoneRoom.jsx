@@ -9,6 +9,35 @@ const libraries = ['places'];
 const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 
 const PhoneRoom = () => {
+   // Phone number formatting function
+  const formatPhoneNumber = (value) => {
+    const cleaned = value.replace(/\D/g, '');
+    const limited = cleaned.slice(0, 10);
+    
+    if (limited.length <= 3) {
+      return limited;
+    } else if (limited.length <= 6) {
+      return `(${limited.slice(0, 3)}) ${limited.slice(3)}`;
+    } else {
+      return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
+    }
+  };
+  // Filter blacklists to only show active ones for current NDR
+  const getActiveBlacklists = (blacklists, type) => {
+    if (!activeNDR) return [];
+    
+    return blacklists.filter(item => {
+      // Permanent blacklists are always active
+      if (item.scope === 'permanent') return true;
+      
+      // Temporary blacklists must match current NDR
+      if (item.scope === 'temporary') {
+        return item.ndrId === activeNDR.id;
+      }
+      
+      return false;
+    });
+  };
   const { activeNDR, loading } = useActiveNDR();
   const [formData, setFormData] = useState({
     name: '',
@@ -276,7 +305,10 @@ const PhoneRoom = () => {
   };
 
   // Check if address is blacklisted
+ // Check if address is blacklisted
   const checkAddressBlacklist = async (address, type) => {
+    if (!activeNDR) return { allowed: true };
+    
     const normalizedInput = address.toLowerCase().trim();
     
     const blacklistRef = collection(db, 'addressBlacklist');
@@ -292,22 +324,31 @@ const PhoneRoom = () => {
                       normalizedInput === normalizedBlacklisted;
       
       if (isMatch) {
-        const appliesToType = type === 'pickup' ? blacklisted.appliesToPickup : blacklisted.appliesToDropoff;
+        const appliesToType = type === 'pickup' ? 
+          blacklisted.appliesToPickup : blacklisted.appliesToDropoff;
         
         if (appliesToType === false) {
           continue;
         }
         
-        if (blacklisted.scope === 'temporary' && activeNDR) {
-          return { 
-            allowed: false, 
-            reason: `This address is temporarily blacklisted for the current NDR (${blacklisted.reason})`
-          };
-        } else if (blacklisted.scope === 'permanent') {
+        // Check if it's a permanent blacklist
+        if (blacklisted.scope === 'permanent') {
           return { 
             allowed: false, 
             reason: `This address is permanently blacklisted (${blacklisted.reason})`
           };
+        }
+        
+        // Check if it's a temporary blacklist for THIS NDR
+        if (blacklisted.scope === 'temporary') {
+          // Only block if ndrId matches current NDR or if no ndrId (legacy entry)
+          if (!blacklisted.ndrId || blacklisted.ndrId === activeNDR.id) {
+            return { 
+              allowed: false, 
+              reason: `This address is temporarily blacklisted for the current NDR (${blacklisted.reason})`
+            };
+          }
+          // If ndrId doesn't match, skip this blacklist (it's from a different NDR)
         }
       }
     }
@@ -319,6 +360,14 @@ const PhoneRoom = () => {
   const handleSubmit = async () => {
     if (!formData.name || !formData.phone || !formData.pickup || !formData.dropoff) {
       setMessage('Please fill in all fields');
+      setMessageType('error');
+      return;
+    }
+
+    // Validate phone number has 10 digits
+    const phoneDigits = formData.phone.replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setMessage('Please enter a valid 10-digit phone number');
       setMessageType('error');
       return;
     }
@@ -340,16 +389,24 @@ const PhoneRoom = () => {
       if (!phoneBlacklistSnapshot.empty) {
         const blacklistEntry = phoneBlacklistSnapshot.docs[0].data();
         
-        if (blacklistEntry.scope === 'temporary' && activeNDR) {
-          setMessage('⛔ This phone number is temporarily blacklisted for the current NDR');
-          setMessageType('error');
-          setSubmitLoading(false);
-          return;
-        } else if (blacklistEntry.scope === 'permanent') {
+        // Check if it's a permanent blacklist
+        if (blacklistEntry.scope === 'permanent') {
           setMessage('⛔ This phone number is permanently blacklisted and cannot be used');
           setMessageType('error');
           setSubmitLoading(false);
           return;
+        }
+        
+        // Check if it's a temporary blacklist for THIS NDR
+        if (blacklistEntry.scope === 'temporary' && activeNDR) {
+          // Only block if ndrId matches current NDR or if no ndrId (legacy entry)
+          if (!blacklistEntry.ndrId || blacklistEntry.ndrId === activeNDR.id) {
+            setMessage('⛔ This phone number is temporarily blacklisted for the current NDR');
+            setMessageType('error');
+            setSubmitLoading(false);
+            return;
+          }
+          // If ndrId doesn't match, this temporary blacklist is from a different NDR - allow it
         }
       }
 
@@ -457,6 +514,7 @@ const handleBlacklistRequest = async () => {
     const collectionName = blacklistRequest.type === 'phone' ? 'phoneBlacklist' : 'addressBlacklist';
     
     // Build the base document data
+    // Build the base document data
     const documentData = {
       reason: blacklistRequest.reason,
       scope: blacklistRequest.scope,
@@ -466,7 +524,8 @@ const handleBlacklistRequest = async () => {
       requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
       requestedByUid: auth.currentUser?.uid || null,
       approvedAt: null,
-      approvedBy: null
+      approvedBy: null,
+      ndrId: blacklistRequest.scope === 'temporary' ? (activeNDR?.id || null) : null
     };
 
     // Add type-specific fields
@@ -690,9 +749,10 @@ const handleBlacklistRequest = async () => {
                 Phone Number
               </label>
               <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({...formData, phone: formatPhoneNumber(e.target.value)})}
+                  maxLength="14"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
                 placeholder="(555) 123-4567"
               />
@@ -948,11 +1008,15 @@ const handleBlacklistRequest = async () => {
                   {blacklistRequest.type === 'address' ? 'Address' : 'Phone Number'} *
                 </label>
                 <input
-                  type="text"
+                  type={blacklistRequest.type === 'phone' ? 'tel' : 'text'}
                   value={blacklistRequest.value}
-                  onChange={(e) => handleBlacklistValueChange(e.target.value)}
+                  onChange={(e) => {
+                    const value = blacklistRequest.type === 'phone' ? formatPhoneNumber(e.target.value) : e.target.value;
+                    handleBlacklistValueChange(value);
+                  }}
                   onFocus={() => blacklistRequest.type === 'address' && setShowBlacklistSuggestions(true)}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition outline-none text-gray-900"
+                  maxLength={blacklistRequest.type === 'phone' ? 14 : undefined}
                   placeholder={blacklistRequest.type === 'address' ? 'Start typing address...' : '(555) 123-4567'}
                   autoComplete="off"
                 />
