@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, onSnapshot, doc, getDoc, updateDoc, orderBy, Timestamp, getDocs, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, getDoc, updateDoc, orderBy, Timestamp, getDocs, where, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../AuthContext';
 import { Play, Printer, FileText, Users, Car, ClipboardList, Archive, RotateCcw, GripVertical, Clock, AlertTriangle } from 'lucide-react';
 
@@ -64,51 +64,94 @@ const NDRReports = () => {
     }
   };
 
-  const endNDR = async (ndrId) => {
-    if (window.confirm('End this NDR? This will disable Phone Room and Ride Management.')) {
-      try {
-        const ridesRef = collection(db, 'rides');
-        const ridesQuery = query(ridesRef, where('ndrId', '==', ndrId));
-        const ridesSnapshot = await getDocs(ridesQuery);
+const endNDR = async (ndrId) => {
+  if (window.confirm('End this NDR? This will disable Phone Room and Ride Management.')) {
+    try {
+      // Calculate ride statistics
+      const ridesRef = collection(db, 'rides');
+      const ridesQuery = query(ridesRef, where('ndrId', '==', ndrId));
+      const ridesSnapshot = await getDocs(ridesQuery);
+      
+      let completedRiders = 0, cancelledRiders = 0, terminatedRiders = 0;
+      let completedRides = 0, cancelledRides = 0, terminatedRides = 0;
+      
+      ridesSnapshot.forEach(doc => {
+        const data = doc.data();
+        const status = data.status;
+        const riders = data.riders || 1;
         
-        let completedRiders = 0, cancelledRiders = 0, terminatedRiders = 0;
-        let completedRides = 0, cancelledRides = 0, terminatedRides = 0;
-        
-        ridesSnapshot.forEach(doc => {
-          const data = doc.data();
-          const status = data.status;
-          const riders = data.riders || 1;
-          
-          if (status === 'completed') {
-            completedRiders += riders;
-            completedRides++;
-          } else if (status === 'cancelled') {
-            cancelledRiders += riders;
-            cancelledRides++;
-          } else if (status === 'terminated') {
-            terminatedRiders += riders;
-            terminatedRides++;
-          }
-        });
+        if (status === 'completed') {
+          completedRiders += riders;
+          completedRides++;
+        } else if (status === 'cancelled') {
+          cancelledRiders += riders;
+          cancelledRides++;
+        } else if (status === 'terminated') {
+          terminatedRiders += riders;
+          terminatedRides++;
+        }
+      });
 
-        await updateDoc(doc(db, 'ndrs', ndrId), {
-          status: 'completed',
-          endedAt: Timestamp.now(),
-          completedRiders,
-          cancelledRiders,
-          terminatedRiders,
-          completedRides,
-          cancelledRides,
-          terminatedRides
-        });
+      // ===== NEW: Cleanup temporary blacklists for this NDR =====
+      
+      // Remove temporary address blacklists for this NDR
+      const addressBlacklistRef = collection(db, 'addressBlacklist');
+      const addressBlacklistQuery = query(
+        addressBlacklistRef, 
+        where('scope', '==', 'temporary'),
+        where('ndrId', '==', ndrId)
+      );
+      const addressBlacklistSnapshot = await getDocs(addressBlacklistQuery);
+      
+      const addressDeletions = addressBlacklistSnapshot.docs.map(doc => 
+        deleteDoc(doc.ref)
+      );
+      
+      // Remove temporary phone blacklists for this NDR
+      const phoneBlacklistRef = collection(db, 'phoneBlacklist');
+      const phoneBlacklistQuery = query(
+        phoneBlacklistRef,
+        where('scope', '==', 'temporary'),
+        where('ndrId', '==', ndrId)
+      );
+      const phoneBlacklistSnapshot = await getDocs(phoneBlacklistQuery);
+      
+      const phoneDeletions = phoneBlacklistSnapshot.docs.map(doc =>
+        deleteDoc(doc.ref)
+      );
+      
+      // Wait for all blacklist deletions to complete
+      await Promise.all([...addressDeletions, ...phoneDeletions]);
+      
+      const totalBlacklistsRemoved = addressDeletions.length + phoneDeletions.length;
+      
+      console.log(`Removed ${totalBlacklistsRemoved} temporary blacklist(s) for NDR ${ndrId}`);
+      
+      // ===== END NEW CODE =====
 
-        alert('NDR ended. Phone Room and Ride Management are now disabled.');
-      } catch (error) {
-        console.error('Error ending NDR:', error);
-        alert('Error ending NDR: ' + error.message);
-      }
+      // Update NDR status
+      await updateDoc(doc(db, 'ndrs', ndrId), {
+        status: 'completed',
+        endedAt: Timestamp.now(),
+        completedRiders,
+        cancelledRiders,
+        terminatedRiders,
+        completedRides,
+        cancelledRides,
+        terminatedRides
+      });
+
+      const message = totalBlacklistsRemoved > 0 
+        ? `NDR ended. Phone Room and Ride Management are now disabled. Removed ${totalBlacklistsRemoved} temporary blacklist(s).`
+        : 'NDR ended. Phone Room and Ride Management are now disabled.';
+      
+      alert(message);
+    } catch (error) {
+      console.error('Error ending NDR:', error);
+      alert('Error ending NDR: ' + error.message);
     }
-  };
+  }
+};
 
   const archiveNDR = async (ndrId) => {
     if (window.confirm('Archive this NDR? You can reactivate it later if needed.')) {

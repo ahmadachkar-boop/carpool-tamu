@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Car, Phone, BarChart3, Users, AlertCircle, TrendingUp, Clock, Bell, Megaphone, Calendar as CalendarIcon, Award } from 'lucide-react';
+import { Car, Phone, BarChart3, Users, AlertCircle, TrendingUp, Clock, Bell, Megaphone, Calendar as CalendarIcon, Award, ExternalLink, FileText, ClipboardCheck, DollarSign } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, onSnapshot, where, orderBy, limit } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
@@ -18,6 +18,42 @@ const Dashboard = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
+
+  // Quick Links data
+  const quickLinks = [
+    {
+      name: 'Refresher Form',
+      url: 'https://docs.google.com/forms/d/e/1FAIpQLSeN__PVDSMyQUge68T1gVLe7d_CY1yrsrI0mP-B_OGksLn5dg/viewform',
+      icon: FileText,
+      color: 'from-blue-500 to-blue-600',
+      bgColor: 'from-blue-50 to-blue-100',
+      description: 'Complete your refresher training'
+    },
+    {
+      name: 'Friday Debriefing',
+      url: 'https://forms.gle/rFFiWfm7iAaLMyv18',
+      icon: ClipboardCheck,
+      color: 'from-purple-500 to-purple-600',
+      bgColor: 'from-purple-50 to-purple-100',
+      description: 'Submit Friday night feedback'
+    },
+    {
+      name: 'Saturday Debriefing',
+      url: 'https://forms.gle/gAdFiPv24Lkk8u8w5',
+      icon: ClipboardCheck,
+      color: 'from-pink-500 to-pink-600',
+      bgColor: 'from-pink-50 to-pink-100',
+      description: 'Submit Saturday night feedback'
+    },
+    {
+      name: 'Pay Dues',
+      url: 'https://tamu.estore.flywire.com/products/membership-dues-fall-23-21127',
+      icon: DollarSign,
+      color: 'from-green-500 to-green-600',
+      bgColor: 'from-green-50 to-green-100',
+      description: 'Pay membership dues online'
+    }
+  ];
 
   // Fetch announcements
   useEffect(() => {
@@ -44,15 +80,17 @@ const Dashboard = () => {
     const now = new Date();
     const eventsQuery = query(
       collection(db, 'events'),
-      where('startTime', '>=', now),
-      orderBy('startTime', 'asc'),
+      where('startDate', '>=', now),
+      orderBy('startDate', 'asc'),
       limit(3)
     );
     
     const unsubscribe = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        startDate: doc.data().startDate?.toDate(),
+        endDate: doc.data().endDate?.toDate()
       }));
       setUpcomingEvents(data);
     });
@@ -60,7 +98,7 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch member leaderboard
+  // Fetch leaderboard
   useEffect(() => {
     const membersQuery = query(
       collection(db, 'members'),
@@ -79,59 +117,46 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  // Fetch ride stats
   useEffect(() => {
     if (!activeNDR) {
-      setStats({
-        activeRiders: 0,
-        pendingRiders: 0,
-        completedRiders: 0,
-        availableCars: 0
-      });
+      setStats({ activeRiders: 0, pendingRiders: 0, completedRiders: 0, availableCars: 0 });
       return;
     }
 
-    setStats(prev => ({ ...prev, availableCars: activeNDR.availableCars || 0 }));
-
     const ridesRef = collection(db, 'rides');
-    
-    const pendingQuery = query(
-      ridesRef, 
-      where('status', '==', 'pending'),
-      where('ndrId', '==', activeNDR.id)
-    );
-    
-    const activeQuery = query(
-      ridesRef, 
-      where('status', '==', 'active'),
-      where('ndrId', '==', activeNDR.id)
-    );
-    
-    const completedQuery = query(
-      ridesRef, 
-      where('status', '==', 'completed'),
-      where('ndrId', '==', activeNDR.id)
+
+    const unsubPending = onSnapshot(
+      query(ridesRef, where('ndrId', '==', activeNDR.id), where('status', '==', 'pending')),
+      (snapshot) => {
+        const totalPendingRiders = snapshot.docs.reduce((sum, doc) => {
+          return sum + (doc.data().riders || 1);
+        }, 0);
+        setStats(prev => ({ ...prev, pendingRiders: totalPendingRiders }));
+      }
     );
 
-    const unsubPending = onSnapshot(pendingQuery, (snapshot) => {
-      const totalPendingRiders = snapshot.docs.reduce((sum, doc) => {
-        return sum + (doc.data().riders || 1);
-      }, 0);
-      setStats(prev => ({ ...prev, pendingRiders: totalPendingRiders }));
-    });
+    const unsubActive = onSnapshot(
+      query(ridesRef, where('ndrId', '==', activeNDR.id), where('status', '==', 'active')),
+      (snapshot) => {
+        const totalActiveRiders = snapshot.docs.reduce((sum, doc) => {
+          return sum + (doc.data().riders || 1);
+        }, 0);
+        setStats(prev => ({ ...prev, activeRiders: totalActiveRiders }));
+      }
+    );
 
-    const unsubActive = onSnapshot(activeQuery, (snapshot) => {
-      const totalActiveRiders = snapshot.docs.reduce((sum, doc) => {
-        return sum + (doc.data().riders || 1);
-      }, 0);
-      setStats(prev => ({ ...prev, activeRiders: totalActiveRiders }));
-    });
+    const unsubCompleted = onSnapshot(
+      query(ridesRef, where('ndrId', '==', activeNDR.id), where('status', '==', 'completed')),
+      (snapshot) => {
+        const totalCompletedRiders = snapshot.docs.reduce((sum, doc) => {
+          return sum + (doc.data().riders || 1);
+        }, 0);
+        setStats(prev => ({ ...prev, completedRiders: totalCompletedRiders }));
+      }
+    );
 
-    const unsubCompleted = onSnapshot(completedQuery, (snapshot) => {
-      const totalCompletedRiders = snapshot.docs.reduce((sum, doc) => {
-        return sum + (doc.data().riders || 1);
-      }, 0);
-      setStats(prev => ({ ...prev, completedRiders: totalCompletedRiders }));
-    });
+    setStats(prev => ({ ...prev, availableCars: activeNDR.availableCars || 0 }));
 
     return () => {
       unsubPending();
@@ -214,6 +239,36 @@ const Dashboard = () => {
             <p className="text-lg font-bold text-gray-900">{activeNDR.eventName}</p>
           </div>
         )}
+      </div>
+
+      {/* Quick Links Section */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
+            <ExternalLink className="text-white" size={20} />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900">Quick Links</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {quickLinks.map((link, index) => (
+            <a
+              key={index}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`group bg-gradient-to-br ${link.bgColor} rounded-xl p-4 hover:shadow-lg transform hover:scale-105 transition-all border border-gray-200 cursor-pointer`}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`w-10 h-10 bg-gradient-to-br ${link.color} rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform`}>
+                  <link.icon className="text-white" size={20} />
+                </div>
+                <ExternalLink className="text-gray-400 group-hover:text-gray-600 transition-colors ml-auto" size={16} />
+              </div>
+              <h4 className="font-bold text-gray-900 mb-1">{link.name}</h4>
+              <p className="text-xs text-gray-600">{link.description}</p>
+            </a>
+          ))}
+        </div>
       </div>
 
       {/* Announcements Section */}
@@ -309,11 +364,24 @@ const Dashboard = () => {
                     event.type === 'gasups' ? 'bg-blue-500' :
                     event.type === 'pickups' ? 'bg-green-500' : 'bg-purple-500'
                   }`}></div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-900">{event.name}</h4>
-                    <p className="text-sm text-gray-600">{formatDate(event.startTime)}</p>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-900 truncate">{event.name}</h4>
+                    <p className="text-xs text-gray-600">
+                      {event.startDate?.toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        hour: 'numeric',
+                        minute: '2-digit'
+                      })}
+                    </p>
                   </div>
-                  <span className="text-xs font-semibold text-gray-600 uppercase">{event.type}</span>
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                    event.type === 'operating night' ? 'bg-red-100 text-red-700' :
+                    event.type === 'gasups' ? 'bg-blue-100 text-blue-700' :
+                    event.type === 'pickups' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    {event.type}
+                  </span>
                 </div>
               ))
             )}
@@ -323,28 +391,32 @@ const Dashboard = () => {
         {/* Leaderboard */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center">
               <Award className="text-white" size={20} />
             </div>
             <h3 className="text-xl font-bold text-gray-900">Top Members</h3>
           </div>
           <div className="space-y-3">
-            {leaderboard.map((member, index) => (
-              <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
-                  index === 0 ? 'bg-yellow-500' :
-                  index === 1 ? 'bg-gray-400' :
-                  index === 2 ? 'bg-orange-600' : 'bg-gray-300'
-                }`}>
-                  {index + 1}
+            {leaderboard.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No members yet</p>
+            ) : (
+              leaderboard.map((member, index) => (
+                <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${
+                    index === 0 ? 'bg-yellow-500' :
+                    index === 1 ? 'bg-gray-400' :
+                    index === 2 ? 'bg-orange-600' : 'bg-gray-300'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900">{member.name}</h4>
+                    <p className="text-xs text-gray-600">{member.nightsWorked || 0} nights worked</p>
+                  </div>
+                  <span className="text-lg font-bold text-[#79F200]">{member.points || 0} pts</span>
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-gray-900">{member.name}</h4>
-                  <p className="text-xs text-gray-600">{member.nightsWorked || 0} nights worked</p>
-                </div>
-                <span className="text-lg font-bold text-[#79F200]">{member.points || 0} pts</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -15,6 +15,7 @@ import Register from './components/Register';
 import AddressBlacklistManager from './components/AddressBlacklistManager';
 import MemberProfile from './components/MemberProfile';
 import AnnouncementsManager from './components/AnnouncementsManager';
+import AdminPanel from './components/AdminPanel';
 
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -48,10 +49,12 @@ const MainApp = () => {
             <Route path="/ride-management" element={<RideManagement />} />
             <Route path="/calendar" element={<EventCalendar />} />
             <Route path="/profile" element={<MemberProfile />} />
+            
+            {/* Director Routes - accessible by deputy, director, and admin */}
             <Route 
               path="/manage-events" 
               element={
-                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                <ProtectedRoute allowedRoles={['deputy', 'director', 'admin']}>
                   <ManageEvents />
                 </ProtectedRoute>
               } 
@@ -59,15 +62,15 @@ const MainApp = () => {
             <Route 
               path="/ndr-reports" 
               element={
-                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                <ProtectedRoute allowedRoles={['deputy', 'director', 'admin']}>
                   <NDRReports />
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route 
               path="/members" 
               element={
-                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                <ProtectedRoute allowedRoles={['deputy', 'director', 'admin']}>
                   <Members />
                 </ProtectedRoute>
               } 
@@ -75,7 +78,7 @@ const MainApp = () => {
             <Route 
               path="/address-blacklist" 
               element={
-                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                <ProtectedRoute allowedRoles={['deputy', 'director', 'admin']}>
                   <AddressBlacklistManager />
                 </ProtectedRoute>
               } 
@@ -83,8 +86,18 @@ const MainApp = () => {
             <Route 
               path="/announcements" 
               element={
-                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                <ProtectedRoute allowedRoles={['deputy', 'director', 'admin']}>
                   <AnnouncementsManager />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* Admin-Only Route */}
+            <Route 
+              path="/admin-panel" 
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminPanel />
                 </ProtectedRoute>
               } 
             />

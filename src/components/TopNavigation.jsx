@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Calendar, Users, Phone, Car, Home, ClipboardList, PlusCircle, LogOut, ChevronDown, Menu, X, Shield, Megaphone, UserCircle } from 'lucide-react';
 import { useActiveNDR } from '../ActiveNDRContext';
 
+
 const TopNavigation = ({ user, logout }) => {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDirectorDropdown, setShowDirectorDropdown] = useState(false);
@@ -13,21 +14,23 @@ const TopNavigation = ({ user, logout }) => {
   const directorDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
-  // Define navigation items - WITHOUT profile (it's now in user dropdown)
   const navItems = [
-    { path: '/', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member'] },
-    { path: '/phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member'] },
-    { path: '/ride-management', icon: Car, label: 'Ride Management', roles: ['director', 'deputy', 'member'] },
-    { path: '/calendar', icon: Calendar, label: 'Calendar', roles: ['director', 'deputy', 'member'] },
+    { path: '/', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member', 'admin'] },
+    { path: '/phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member', 'admin'] },
+    { path: '/ride-management', icon: Car, label: 'Ride Management', roles: ['director', 'deputy', 'member', 'admin'] },
+    { path: '/calendar', icon: Calendar, label: 'Calendar', roles: ['director', 'deputy', 'member', 'admin'] },
   ];
 
   const directorItems = [
-    { path: '/manage-events', icon: PlusCircle, label: 'Manage Events', roles: ['director', 'deputy'] },
-    { path: '/ndr-reports', icon: ClipboardList, label: 'NDR Reports', roles: ['director', 'deputy'] },
-    { path: '/members', icon: Users, label: 'Members', roles: ['director', 'deputy'] },
-    { path: '/address-blacklist', icon: Shield, label: 'Blacklist Manager', roles: ['director', 'deputy'] },
-    { path: '/announcements', icon: Megaphone, label: 'Announcements', roles: ['director', 'deputy'] },
+    { path: '/manage-events', icon: PlusCircle, label: 'Manage Events', roles: ['director', 'deputy', 'admin'] },
+    { path: '/ndr-reports', icon: ClipboardList, label: 'NDR Reports', roles: ['director', 'deputy', 'admin'] },
+    { path: '/members', icon: Users, label: 'Members', roles: ['director', 'deputy', 'admin'] },
+    { path: '/address-blacklist', icon: Shield, label: 'Blacklist Manager', roles: ['director', 'deputy', 'admin'] },
+    { path: '/announcements', icon: Megaphone, label: 'Announcements', roles: ['director', 'deputy', 'admin'] },
+    { path: '/admin-panel', icon: Shield, label: 'Admin Panel', roles: ['admin'] }, // NEW: Admin-only page
   ];
+
+
 
   // Filter items based on role only
   const filteredItems = navItems.filter(item => item.roles.includes(user?.role));

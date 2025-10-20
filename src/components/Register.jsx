@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import { User, Mail, Lock, Phone, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { doc, setDoc, Timestamp, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { User, Mail, Lock, Phone, AlertCircle, ArrowLeft, Clock } from 'lucide-react';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ const Register = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   const handleChange = (e) => {
     setFormData({
@@ -34,9 +35,48 @@ const Register = () => {
     });
   };
 
+  const checkEmailApproval = async (email) => {
+    try {
+      const approvalsRef = collection(db, 'emailApprovals');
+      const q = query(approvalsRef, where('email', '==', email.toLowerCase()));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        return { approved: false, exists: false };
+      }
+      
+      const approval = snapshot.docs[0].data();
+      return { 
+        approved: approval.status === 'approved', 
+        exists: true,
+        status: approval.status 
+      };
+    } catch (error) {
+      console.error('Error checking email approval:', error);
+      throw error;
+    }
+  };
+
+  const requestApproval = async (email, name) => {
+    try {
+      await addDoc(collection(db, 'emailApprovals'), {
+        email: email.toLowerCase(),
+        name: name,
+        status: 'pending',
+        createdAt: Timestamp.now(),
+        requestedAt: Timestamp.now(),  // ADD THIS LINE
+        approved: false
+      });
+    } catch (error) {
+      console.error('Error requesting approval:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setPendingApproval(false);
 
     // Validation
     if (!formData.name || !formData.email || !formData.password || !formData.phone) {
@@ -57,7 +97,30 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Create Firebase Auth account
+      // Check if email is approved
+      const emailCheck = await checkEmailApproval(formData.email);
+      
+      if (!emailCheck.approved) {
+        if (emailCheck.exists && emailCheck.status === 'pending') {
+          setError('Your email is pending admin approval. Please wait for approval before creating an account.');
+          setPendingApproval(true);
+          setLoading(false);
+          return;
+        } else if (emailCheck.exists && emailCheck.status === 'rejected') {
+          setError('Your email has been rejected. Please contact an administrator.');
+          setLoading(false);
+          return;
+        } else {
+          // Email not in system - create pending request
+          await requestApproval(formData.email, formData.name);
+          setError('Your email needs approval. We\'ve submitted a request to the administrators. You\'ll be notified when approved.');
+          setPendingApproval(true);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Email is approved - proceed with registration
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
@@ -85,76 +148,70 @@ const Register = () => {
         createdAt: Timestamp.now()
       });
 
-      alert('Registration successful! Redirecting to dashboard...');
-      navigate('/');
+      alert('Registration successful! You can now log in.');
+      navigate('/login');
     } catch (error) {
-      console.error('Registration error:', error);
-      if (error.code === 'auth/email-already-in-use') {
-        setError('This email is already registered');
-      } else {
-        setError('Error creating account: ' + error.message);
-      }
+      console.error('Error creating account:', error);
+      setError('Error creating account: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#79F200] py-8 px-4 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-20 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
-      </div>
-      
-      <div className="max-w-4xl mx-auto relative z-10">
-        {/* Back Button */}
+    <div className="min-h-screen bg-gradient-to-br from-[#500000] via-[#79F200] to-[#500000] flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl">
+        {/* Back to Login Button */}
         <Link 
-          to="/login"
-          className="inline-flex items-center gap-2 text-white hover:text-white/80 mb-6 transition font-semibold text-lg"
+          to="/login" 
+          className="inline-flex items-center gap-2 text-white hover:text-gray-200 mb-6 font-semibold transition-colors"
         >
-          <ArrowLeft size={24} />
-          <span>Back to Login</span>
+          <ArrowLeft size={20} />
+          Back to Login
         </Link>
 
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6 p-4">
-            <img 
-              src={`${process.env.PUBLIC_URL}/logo.png`}
-              alt="TAMU Carpool Logo" 
-              className="w-full h-full object-contain"
-              onError={(e) => {
-                console.error('Logo failed to load');
-                e.target.style.display = 'none';
-              }}
-            />
+        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-[#500000] to-[#79F200] p-8 text-center">
+            <h2 className="text-4xl font-black text-white mb-2">Join TAMU Carpool</h2>
+            <p className="text-white/90 text-lg font-medium">Create your account to start carpooling</p>
           </div>
-          <h1 className="text-5xl md:text-6xl font-black text-white mb-3 drop-shadow-lg">
-            Join TAMU Carpool
-          </h1>
-          <p className="text-white/90 text-lg font-medium">Create your account to get started</p>
-        </div>
 
-        {/* Registration Form */}
-        <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-10">
-          {error && (
-            <div className="mb-8 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-3">
-              <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={22} />
-              <p className="text-red-700 text-sm font-medium">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Required Information */}
-            <div>
-              <h3 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-3 pb-4 border-b-4 border-[#79F200]">
-                <div className="w-10 h-10 bg-[#79F200] rounded-xl flex items-center justify-center">
-                  <CheckCircle className="text-white" size={24} />
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            {/* Error/Pending Message */}
+            {error && (
+              <div className={`p-4 rounded-xl flex items-start gap-3 ${
+                pendingApproval 
+                  ? 'bg-yellow-50 border-2 border-yellow-200' 
+                  : 'bg-red-50 border-2 border-red-200'
+              }`}>
+                {pendingApproval ? (
+                  <Clock className="flex-shrink-0 text-yellow-600 mt-0.5" size={20} />
+                ) : (
+                  <AlertCircle className="flex-shrink-0 text-red-600 mt-0.5" size={20} />
+                )}
+                <div className="flex-1">
+                  <p className={`font-semibold ${
+                    pendingApproval ? 'text-yellow-800' : 'text-red-800'
+                  }`}>
+                    {error}
+                  </p>
+                  {pendingApproval && (
+                    <p className="text-yellow-700 text-sm mt-2">
+                      Check back later or contact an administrator for faster approval.
+                    </p>
+                  )}
                 </div>
-                Required Information
+              </div>
+            )}
+
+            {/* Basic Information */}
+            <div className="space-y-5">
+              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
+                Basic Information
               </h3>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-bold text-gray-900 mb-3">Full Name *</label>
@@ -214,7 +271,7 @@ const Register = () => {
                       value={formData.confirmPassword}
                       onChange={handleChange}
                       className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="Re-enter password"
+                      placeholder="Confirm password"
                       required
                     />
                   </div>
@@ -235,140 +292,175 @@ const Register = () => {
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Gender</label>
+                  <input
+                    type="text"
+                    name="gender"
+                    value={formData.gender}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                    placeholder="e.g., Male, Female, Non-binary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Pronouns</label>
+                  <input
+                    type="text"
+                    name="pronouns"
+                    value={formData.pronouns}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                    placeholder="e.g., he/him, she/her, they/them"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Optional Information */}
-            <div>
-              <h3 className="text-2xl font-black text-gray-900 mb-6 pb-4 border-b-4 border-gray-200">Optional Information</h3>
+            {/* Address Information */}
+            <div className="space-y-5">
+              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
+                Address Information
+              </h3>
+
+              <div className="grid grid-cols-1 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Street Address</label>
+                  <input
+                    type="text"
+                    name="address"
+                    value={formData.address}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                    placeholder="123 Main St"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-900 mb-3">City</label>
+                    <input
+                      type="text"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="College Station"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-900 mb-3">State</label>
+                    <input
+                      type="text"
+                      name="state"
+                      value={formData.state}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="TX"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-900 mb-3">ZIP Code</label>
+                    <input
+                      type="text"
+                      name="zip"
+                      value={formData.zip}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                      placeholder="77840"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Emergency Contact */}
+            <div className="space-y-5">
+              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
+                Emergency Contact
+              </h3>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <input
-                  type="text"
-                  name="gender"
-                  value={formData.gender}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Gender"
-                />
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Emergency Contact Name</label>
+                  <input
+                    type="text"
+                    name="emergencyContact"
+                    value={formData.emergencyContact}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                    placeholder="Jane Doe"
+                  />
+                </div>
 
-                <input
-                  type="text"
-                  name="pronouns"
-                  value={formData.pronouns}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Pronouns"
-                />
-
-                <input
-                  type="text"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Street Address"
-                />
-
-                <input
-                  type="text"
-                  name="city"
-                  value={formData.city}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="City"
-                />
-
-                <input
-                  type="text"
-                  name="state"
-                  value={formData.state}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="State"
-                />
-
-                <input
-                  type="text"
-                  name="zip"
-                  value={formData.zip}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="ZIP Code"
-                />
-
-                <input
-                  type="text"
-                  name="emergencyContact"
-                  value={formData.emergencyContact}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Emergency Contact Name"
-                />
-
-                <input
-                  type="tel"
-                  name="emergencyPhone"
-                  value={formData.emergencyPhone}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Emergency Contact Phone"
-                />
-
-                <input
-                  type="text"
-                  name="carInfo"
-                  value={formData.carInfo}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Car Info (Make, Model, Year)"
-                />
-
-                <input
-                  type="text"
-                  name="dietaryRestrictions"
-                  value={formData.dietaryRestrictions}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                  placeholder="Dietary Restrictions"
-                />
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Emergency Contact Phone</label>
+                  <input
+                    type="tel"
+                    name="emergencyPhone"
+                    value={formData.emergencyPhone}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                    placeholder="(555) 987-6543"
+                  />
+                </div>
               </div>
             </div>
 
+            {/* Additional Information */}
+            <div className="space-y-5">
+              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
+                Additional Information
+              </h3>
+
+              <div className="grid grid-cols-1 gap-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Car Information</label>
+                  <textarea
+                    name="carInfo"
+                    value={formData.carInfo}
+                    onChange={handleChange}
+                    rows="2"
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium resize-none"
+                    placeholder="e.g., 2020 Honda Civic, Blue, 5 seats"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Dietary Restrictions</label>
+                  <textarea
+                    name="dietaryRestrictions"
+                    value={formData.dietaryRestrictions}
+                    onChange={handleChange}
+                    rows="2"
+                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium resize-none"
+                    placeholder="e.g., Vegetarian, Gluten-free, Nut allergy"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#79F200] text-gray-900 font-black py-5 rounded-2xl hover:shadow-2xl hover:shadow-[#79F200]/40 transform hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3 text-lg"
+              className="w-full py-4 bg-gradient-to-r from-[#500000] to-[#79F200] text-white rounded-xl font-black text-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
-              {loading ? (
-                <>
-                  <div className="w-6 h-6 border-3 border-gray-900/30 border-t-gray-900 rounded-full animate-spin"></div>
-                  <span>Creating Account...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle size={24} />
-                  <span>Create Account</span>
-                </>
-              )}
+              {loading ? 'Creating Account...' : 'Create Account'}
             </button>
-          </form>
 
-          <div className="mt-8 pt-8 border-t-2 border-gray-100">
-            <p className="text-center text-gray-600 text-base">
+            {/* Login Link */}
+            <p className="text-center text-gray-600 font-medium">
               Already have an account?{' '}
-              <Link 
-                to="/login" 
-                className="text-[#79F200] hover:text-[#5bc000] font-bold transition-colors"
-              >
-                Sign in here
+              <Link to="/login" className="text-[#500000] hover:text-[#79F200] font-bold transition-colors">
+                Log in here
               </Link>
             </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-white/80 text-sm font-medium">
-          <p>© 2025 TAMU Carpool. All rights reserved.</p>
+          </form>
         </div>
       </div>
     </div>
