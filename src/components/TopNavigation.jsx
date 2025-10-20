@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Calendar, Users, Phone, Car, Home, ClipboardList, PlusCircle, LogOut, ChevronDown, Menu, X, Shield } from 'lucide-react';
+import { Calendar, Users, Phone, Car, Home, ClipboardList, PlusCircle, LogOut, ChevronDown, Menu, X, Shield, Megaphone, UserCircle } from 'lucide-react';
 import { useActiveNDR } from '../ActiveNDRContext';
 
 const TopNavigation = ({ user, logout }) => {
@@ -13,7 +13,7 @@ const TopNavigation = ({ user, logout }) => {
   const directorDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
-  // Define navigation items - Phone Room and Ride Management always visible
+  // Define navigation items - WITHOUT profile (it's now in user dropdown)
   const navItems = [
     { path: '/', icon: Home, label: 'Dashboard', roles: ['director', 'deputy', 'member'] },
     { path: '/phone-room', icon: Phone, label: 'Phone Room', roles: ['director', 'deputy', 'member'] },
@@ -25,7 +25,8 @@ const TopNavigation = ({ user, logout }) => {
     { path: '/manage-events', icon: PlusCircle, label: 'Manage Events', roles: ['director', 'deputy'] },
     { path: '/ndr-reports', icon: ClipboardList, label: 'NDR Reports', roles: ['director', 'deputy'] },
     { path: '/members', icon: Users, label: 'Members', roles: ['director', 'deputy'] },
-    { path: '/address-blacklist', icon: Shield, label: 'Address Blacklist', roles: ['director', 'deputy'] },
+    { path: '/address-blacklist', icon: Shield, label: 'Blacklist Manager', roles: ['director', 'deputy'] },
+    { path: '/announcements', icon: Megaphone, label: 'Announcements', roles: ['director', 'deputy'] },
   ];
 
   // Filter items based on role only
@@ -57,6 +58,7 @@ const TopNavigation = ({ user, logout }) => {
   // Close mobile menu when route changes
   useEffect(() => {
     setShowMobileMenu(false);
+    setShowUserDropdown(false);
   }, [location.pathname]);
 
   return (
@@ -151,9 +153,21 @@ const TopNavigation = ({ user, logout }) => {
                       <p className="text-sm font-bold text-gray-900">{user?.name}</p>
                       <p className="text-xs text-[#79F200] capitalize mt-1 font-semibold">{user?.role}</p>
                     </div>
+                    
+                    {/* Profile Link */}
+                    <Link
+                      to="/profile"
+                      onClick={() => setShowUserDropdown(false)}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-gray-900 hover:bg-[#79F200]/20 transition font-semibold"
+                    >
+                      <UserCircle size={20} />
+                      <span>My Profile</span>
+                    </Link>
+
+                    {/* Logout Button */}
                     <button
                       onClick={logout}
-                      className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 transition font-semibold"
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 transition font-semibold border-t-2 border-gray-100"
                     >
                       <LogOut size={20} />
                       <span>Logout</span>
@@ -191,6 +205,19 @@ const TopNavigation = ({ user, logout }) => {
                   <span>{item.label}</span>
                 </Link>
               ))}
+
+              {/* Profile in mobile menu */}
+              <Link
+                to="/profile"
+                className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-bold ${
+                  isActive('/profile')
+                    ? 'bg-white text-gray-900 shadow-lg'
+                    : 'text-gray-900 hover:bg-white/30'
+                }`}
+              >
+                <UserCircle size={22} />
+                <span>My Profile</span>
+              </Link>
 
               {filteredDirectorItems.length > 0 && (
                 <>

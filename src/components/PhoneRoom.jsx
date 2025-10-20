@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
-import { collection, addDoc, query, onSnapshot, where, Timestamp, orderBy } from 'firebase/firestore';
+import { collection, addDoc, query, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
 import { AlertCircle, Phone, MapPin, Users, Send, CheckCircle, XCircle, Shield, AlertTriangle } from 'lucide-react';
 import { useLoadScript } from '@react-google-maps/api';
@@ -26,14 +26,20 @@ const PhoneRoom = () => {
   const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const [showBlacklistViewer, setShowBlacklistViewer] = useState(false);
   const [blacklistRequest, setBlacklistRequest] = useState({
-    address: '',
-    reason: ''
+    type: 'address', // 'address' or 'phone'
+    value: '', // address or phone number
+    reason: '',
+    scope: 'permanent', // 'permanent' or 'temporary'
+    appliesToPickup: true,
+    appliesToDropoff: true
   });
   const [blacklistedAddresses, setBlacklistedAddresses] = useState([]);
+  const [blacklistedPhones, setBlacklistedPhones] = useState([]);
   const [blacklistLoading, setBlacklistLoading] = useState(false);
   const [blacklistAddressSuggestions, setBlacklistAddressSuggestions] = useState([]);
   const [showBlacklistSuggestions, setShowBlacklistSuggestions] = useState(false);
   const blacklistAddressRef = useRef(null);
+  const [viewerTab, setViewerTab] = useState('addresses'); // 'addresses' or 'phones'
   
   // Autocomplete states
   const [pickupSuggestions, setPickupSuggestions] = useState([]);
@@ -57,118 +63,18 @@ const PhoneRoom = () => {
   const VALID_ZIP_CODES = ['77801', '77802', '77803', '77807', '77808', '77840', '77841', '77842', '77843', '77844', '77845'];
   const VALID_CITIES = ['bryan', 'college station', 'college-station'];
 
-  // Verify address is actually in Bryan/College Station using geocoding
-  const verifyAddressInBCS = async (address) => {
-    if (!address || address.trim().length === 0) {
-      return { valid: false, reason: 'Address is empty' };
-    }
-    
-    // Basic text validation first
-    const lowerAddress = address.toLowerCase();
-    
-    const hasValidCity = VALID_CITIES.some(city => lowerAddress.includes(city));
-    const hasValidZip = VALID_ZIP_CODES.some(zip => lowerAddress.includes(zip));
-    
-    // First check: Must have Bryan/College Station in name OR valid zip
-    if (!hasValidCity && !hasValidZip) {
-      return { 
-        valid: false, 
-        reason: 'Address must include "Bryan" or "College Station" or a valid local zip code (77801-77845)' 
-      };
-    }
-
-    // If Google Maps is loaded, verify with geocoding
-    if (isLoaded && window.google) {
-      try {
-        const geocoder = new window.google.maps.Geocoder();
-        const result = await new Promise((resolve, reject) => {
-          geocoder.geocode({ address: address }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-              resolve(results[0]);
-            } else {
-              reject(new Error('Geocoding failed: ' + status));
-            }
-          });
-        });
-
-        const location = result.geometry.location;
-        const lat = location.lat();
-        const lng = location.lng();
-
-        // Check if address components include Bryan or College Station city
-        const addressComponents = result.address_components;
-        
-        const cityComponent = addressComponents.find(component => 
-          component.types.includes('locality')
-        );
-        
-        const zipComponent = addressComponents.find(component => 
-          component.types.includes('postal_code')
-        );
-        
-        const city = cityComponent?.long_name?.toLowerCase() || '';
-        const zip = zipComponent?.long_name || '';
-        
-        const isBryanOrCS = VALID_CITIES.some(validCity => city.includes(validCity));
-        const hasValidZipCode = VALID_ZIP_CODES.includes(zip);
-
-        console.log('Address verification:', {
-          address,
-          city,
-          zip,
-          isBryanOrCS,
-          hasValidZipCode,
-          coordinates: { lat, lng }
-        });
-
-        // Must have Bryan/College Station in city name OR valid zip code
-        if (!isBryanOrCS && !hasValidZipCode) {
-          return { 
-            valid: false, 
-            reason: 'Address must be within Bryan or College Station city limits (detected city: ' + (city || 'unknown') + ', zip: ' + (zip || 'unknown') + ')'
-          };
-        }
-
-        return { valid: true, coordinates: { lat, lng } };
-      } catch (error) {
-        console.error('Geocoding error:', error);
-        // If geocoding fails, fall back to text validation
-        return { 
-          valid: hasValidCity || hasValidZip,
-          reason: hasValidCity || hasValidZip ? null : 'Unable to verify address location'
-        };
-      }
-    }
-
-    // Fallback if Google Maps not loaded
-    return { 
-      valid: hasValidCity || hasValidZip,
-      reason: hasValidCity || hasValidZip ? null : 'Address must be in Bryan/College Station area'
-    };
+  // Mock addresses for fallback when Google API unavailable
+  const getMockBCSAddresses = (input) => {
+    const mockAddresses = [
+      '123 University Dr, College Station, TX 77840',
+      '456 Texas Ave, Bryan, TX 77801',
+      '789 George Bush Dr, College Station, TX 77840',
+      '101 Main St, Bryan, TX 77801'
+    ];
+    return mockAddresses.filter(addr => 
+      addr.toLowerCase().includes(input.toLowerCase())
+    );
   };
-
-  // Check if address is blacklisted
-  const isAddressBlacklisted = (address) => {
-    const normalizedInput = address.toLowerCase().trim();
-    
-    return blacklistedAddresses.some(blacklisted => {
-      const normalizedBlacklisted = blacklisted.address.toLowerCase().trim();
-      // Check if the addresses are similar (exact match or contains)
-      return normalizedInput.includes(normalizedBlacklisted) || 
-             normalizedBlacklisted.includes(normalizedInput) ||
-             normalizedInput === normalizedBlacklisted;
-    });
-  };
-
-  // DEBUG: Log API key and loading status
-  useEffect(() => {
-    console.log('=== GOOGLE PLACES DEBUG ===');
-    console.log('API Key exists:', !!GOOGLE_API_KEY);
-    console.log('API Key first 10 chars:', GOOGLE_API_KEY?.substring(0, 10));
-    console.log('Is Loaded:', isLoaded);
-    console.log('Load Error:', loadError);
-    console.log('========================');
-  }, [isLoaded, loadError]);
 
   // Fetch current user information
   useEffect(() => {
@@ -238,6 +144,25 @@ const PhoneRoom = () => {
     return () => unsubscribe();
   }, []);
 
+  // Fetch blacklisted phone numbers
+  useEffect(() => {
+    const phoneBlacklistQuery = query(
+      collection(db, 'phoneBlacklist'),
+      where('status', '==', 'approved')
+    );
+
+    const unsubscribe = onSnapshot(phoneBlacklistQuery, (snapshot) => {
+      const phones = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setBlacklistedPhones(phones);
+      console.log('Loaded blacklisted phones:', phones.length);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Fetch address suggestions from Google Places API
   const fetchAddressSuggestions = async (input, setSuggestions) => {
     if (!input || input.length < 3) {
@@ -256,27 +181,19 @@ const PhoneRoom = () => {
         input: input,
         componentRestrictions: { country: 'us' },
         location: new window.google.maps.LatLng(BCS_CENTER.lat, BCS_CENTER.lng),
-        radius: 50000, // Show wider area (50km) for suggestions
-        // Don't use strictBounds - let users see all addresses
+        radius: 50000,
       };
 
       autocompleteService.current.getPlacePredictions(request, (predictions, status) => {
-        console.log('Google Places Status:', status);
-        
         if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-          // Show all suggestions - let validation handle rejections
           const allSuggestions = predictions
             .map(prediction => prediction.description)
-            .slice(0, 10); // Show more results since we're not filtering
+            .slice(0, 10);
           
-          console.log('All suggestions:', allSuggestions.length);
           setSuggestions(allSuggestions);
         } else if (status === window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-          console.log('No results from Google');
           setSuggestions([]);
         } else {
-          console.log('Google Places API error:', status);
-          console.log('Falling back to mock addresses');
           setSuggestions(getMockBCSAddresses(input));
         }
       });
@@ -286,45 +203,311 @@ const PhoneRoom = () => {
     }
   };
 
-  // Mock address suggestions for Bryan/College Station area (fallback)
-  const getMockBCSAddresses = (input) => {
-    const lowerInput = input.toLowerCase();
+  // Verify address is in Bryan/College Station
+  const verifyAddressInBCS = async (address) => {
+    if (!address || address.trim().length === 0) {
+      return { valid: false, reason: 'Address is empty' };
+    }
     
-    const bcsAddresses = [
-      'Texas A&M University, College Station, TX 77843',
-      'Memorial Student Center, College Station, TX 77843',
-      'Kyle Field, College Station, TX 77843',
-      'Reed Arena, College Station, TX 77843',
-      'Evans Library, College Station, TX 77843',
-      'Zachry Engineering Center, College Station, TX 77843',
-      'Northgate, College Station, TX 77840',
-      '200 University Dr, College Station, TX 77840',
-      '300 Patricia St, College Station, TX 77840',
-      'Post Oak Mall, College Station, TX 77845',
-      '1500 Harvey Rd, College Station, TX 77840',
-      'Target, College Station, TX 77840',
-      'HEB Plus, College Station, TX 77845',
-      'Walmart Supercenter, College Station, TX 77845',
-      'Century Square, College Station, TX 77840',
-      'The District, College Station, TX 77845',
-      '1000 University Oaks, College Station, TX 77840',
-      '2000 Dartmouth St, College Station, TX 77840',
-      '3000 Longmire Dr, College Station, TX 77845',
-      '4000 College Main, College Station, TX 77845',
-      '5000 Rock Prairie Rd, College Station, TX 77845',
-      '1000 E Villa Maria Rd, Bryan, TX 77802',
-      '2000 Briarcrest Dr, Bryan, TX 77802',
-      '3000 Texas Ave, Bryan, TX 77802',
-      '4000 S College Ave, Bryan, TX 77801',
-      'Baylor Scott & White, College Station, TX 77845',
-      'CHI St Joseph Health, Bryan, TX 77802',
-      'Easterwood Airport, College Station, TX 77845',
-    ];
+    const lowerAddress = address.toLowerCase();
+    const hasValidCity = VALID_CITIES.some(city => lowerAddress.includes(city));
+    const hasValidZip = VALID_ZIP_CODES.some(zip => lowerAddress.includes(zip));
+    
+    if (!hasValidCity && !hasValidZip) {
+      return { 
+        valid: false, 
+        reason: 'Address must include "Bryan" or "College Station" or a valid local zip code (77801-77845)' 
+      };
+    }
 
-    return bcsAddresses
-      .filter(addr => addr.toLowerCase().includes(lowerInput))
-      .slice(0, 8);
+    if (isLoaded && window.google) {
+      try {
+        const geocoder = new window.google.maps.Geocoder();
+        const result = await new Promise((resolve, reject) => {
+          geocoder.geocode({ address: address }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+              resolve(results[0]);
+            } else {
+              reject(new Error('Geocoding failed: ' + status));
+            }
+          });
+        });
+
+        const location = result.geometry.location;
+        const lat = location.lat();
+        const lng = location.lng();
+        const addressComponents = result.address_components;
+        
+        const cityComponent = addressComponents.find(component => 
+          component.types.includes('locality')
+        );
+        
+        const zipComponent = addressComponents.find(component => 
+          component.types.includes('postal_code')
+        );
+        
+        const city = cityComponent?.long_name?.toLowerCase() || '';
+        const zip = zipComponent?.long_name || '';
+        
+        const isBryanOrCS = VALID_CITIES.some(validCity => city.includes(validCity));
+        const hasValidZipCode = VALID_ZIP_CODES.includes(zip);
+
+        if (!isBryanOrCS && !hasValidZipCode) {
+          return { 
+            valid: false, 
+            reason: 'Address must be within Bryan or College Station city limits (detected city: ' + (city || 'unknown') + ', zip: ' + (zip || 'unknown') + ')'
+          };
+        }
+
+        return { valid: true, coordinates: { lat, lng } };
+      } catch (error) {
+        console.error('Geocoding error:', error);
+        return { 
+          valid: hasValidCity || hasValidZip,
+          reason: hasValidCity || hasValidZip ? null : 'Unable to verify address location'
+        };
+      }
+    }
+
+    return { 
+      valid: hasValidCity || hasValidZip,
+      reason: hasValidCity || hasValidZip ? null : 'Address must be in Bryan/College Station area'
+    };
   };
+
+  // Check if address is blacklisted
+  const checkAddressBlacklist = async (address, type) => {
+    const normalizedInput = address.toLowerCase().trim();
+    
+    const blacklistRef = collection(db, 'addressBlacklist');
+    const blacklistQuery = query(blacklistRef, where('status', '==', 'approved'));
+    const blacklistSnapshot = await getDocs(blacklistQuery);
+    
+    for (const doc of blacklistSnapshot.docs) {
+      const blacklisted = doc.data();
+      const normalizedBlacklisted = blacklisted.address.toLowerCase().trim();
+      
+      const isMatch = normalizedInput.includes(normalizedBlacklisted) || 
+                      normalizedBlacklisted.includes(normalizedInput) ||
+                      normalizedInput === normalizedBlacklisted;
+      
+      if (isMatch) {
+        const appliesToType = type === 'pickup' ? blacklisted.appliesToPickup : blacklisted.appliesToDropoff;
+        
+        if (appliesToType === false) {
+          continue;
+        }
+        
+        if (blacklisted.scope === 'temporary' && activeNDR) {
+          return { 
+            allowed: false, 
+            reason: `This address is temporarily blacklisted for the current NDR (${blacklisted.reason})`
+          };
+        } else if (blacklisted.scope === 'permanent') {
+          return { 
+            allowed: false, 
+            reason: `This address is permanently blacklisted (${blacklisted.reason})`
+          };
+        }
+      }
+    }
+    
+    return { allowed: true };
+  };
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.phone || !formData.pickup || !formData.dropoff) {
+      setMessage('Please fill in all fields');
+      setMessageType('error');
+      return;
+    }
+
+    setSubmitLoading(true);
+    setMessage('Verifying information...');
+    setMessageType('info');
+
+    try {
+      // Check phone blacklist first
+      const phoneBlacklistRef = collection(db, 'phoneBlacklist');
+      const phoneBlacklistQuery = query(
+        phoneBlacklistRef, 
+        where('phone', '==', formData.phone),
+        where('status', '==', 'approved')
+      );
+      const phoneBlacklistSnapshot = await getDocs(phoneBlacklistQuery);
+
+      if (!phoneBlacklistSnapshot.empty) {
+        const blacklistEntry = phoneBlacklistSnapshot.docs[0].data();
+        
+        if (blacklistEntry.scope === 'temporary' && activeNDR) {
+          setMessage('⛔ This phone number is temporarily blacklisted for the current NDR');
+          setMessageType('error');
+          setSubmitLoading(false);
+          return;
+        } else if (blacklistEntry.scope === 'permanent') {
+          setMessage('⛔ This phone number is permanently blacklisted and cannot be used');
+          setMessageType('error');
+          setSubmitLoading(false);
+          return;
+        }
+      }
+
+      // Check pickup address blacklist
+      const pickupBlacklistCheck = await checkAddressBlacklist(formData.pickup, 'pickup');
+      if (!pickupBlacklistCheck.allowed) {
+        setMessage(`⛔ Pickup address is blacklisted: ${pickupBlacklistCheck.reason}`);
+        setMessageType('error');
+        setSubmitLoading(false);
+        return;
+      }
+
+      // Check dropoff address blacklist
+      const dropoffBlacklistCheck = await checkAddressBlacklist(formData.dropoff, 'dropoff');
+      if (!dropoffBlacklistCheck.allowed) {
+        setMessage(`⛔ Dropoff address is blacklisted: ${dropoffBlacklistCheck.reason}`);
+        setMessageType('error');
+        setSubmitLoading(false);
+        return;
+      }
+
+      setMessage('Validating addresses...');
+
+      // Validate pickup address
+      const pickupValidation = await verifyAddressInBCS(formData.pickup);
+      if (!pickupValidation.valid) {
+        setMessage(`Pickup address rejected: ${pickupValidation.reason}`);
+        setMessageType('error');
+        setSubmitLoading(false);
+        return;
+      }
+
+      // Validate dropoff address
+      const dropoffValidation = await verifyAddressInBCS(formData.dropoff);
+      if (!dropoffValidation.valid) {
+        setMessage(`Dropoff address rejected: ${dropoffValidation.reason}`);
+        setMessageType('error');
+        setSubmitLoading(false);
+        return;
+      }
+
+      setMessage('Submitting request...');
+
+      await addDoc(collection(db, 'rides'), {
+        patronName: formData.name,
+        phone: formData.phone,
+        pickup: formData.pickup,
+        dropoff: formData.dropoff,
+        riders: formData.riders,
+        status: 'pending',
+        carNumber: null,
+        assignedDriver: null,
+        requestedAt: Timestamp.now(),
+        completedAt: null,
+        willingToCombine: false,
+        carInfo: null,
+        requestType: 'phone',
+        ndrId: activeNDR.id,
+        eventId: activeNDR.eventId,
+        pickupCoordinates: pickupValidation.coordinates || null,
+        dropoffCoordinates: dropoffValidation.coordinates || null
+      });
+
+      setMessage('Request submitted successfully!');
+      setMessageType('success');
+      setFormData({ name: '', phone: '', pickup: '', dropoff: '', riders: 1 });
+      
+      setTimeout(() => {
+        setMessage('');
+        setMessageType('');
+      }, 3000);
+    } catch (error) {
+      console.error('Error submitting request:', error);
+      setMessage('Error submitting request: ' + error.message);
+      setMessageType('error');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  // Handle blacklist request submission
+const handleBlacklistRequest = async () => {
+  if (!blacklistRequest.value || !blacklistRequest.reason) {
+    setMessage('Please fill in all required fields');
+    setMessageType('error');
+    return;
+  }
+
+  // Validate phone number format if type is phone
+  if (blacklistRequest.type === 'phone') {
+    const phoneRegex = /^[\d\s\-\(\)]+$/;
+    if (!phoneRegex.test(blacklistRequest.value)) {
+      setMessage('Please enter a valid phone number');
+      setMessageType('error');
+      return;
+    }
+  }
+
+  setBlacklistLoading(true);
+
+  try {
+    const now = Timestamp.now();
+    
+    // Choose the correct collection based on type
+    const collectionName = blacklistRequest.type === 'phone' ? 'phoneBlacklist' : 'addressBlacklist';
+    
+    // Build the base document data
+    const documentData = {
+      reason: blacklistRequest.reason,
+      scope: blacklistRequest.scope,
+      status: 'pending',
+      requestedAt: now,
+      createdAt: now,
+      requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
+      requestedByUid: auth.currentUser?.uid || null,
+      approvedAt: null,
+      approvedBy: null
+    };
+
+    // Add type-specific fields
+    if (blacklistRequest.type === 'phone') {
+      documentData.phone = blacklistRequest.value;
+    } else {
+      documentData.address = blacklistRequest.value;
+      documentData.appliesToPickup = blacklistRequest.appliesToPickup;
+      documentData.appliesToDropoff = blacklistRequest.appliesToDropoff;
+    }
+
+    console.log('Submitting blacklist request:', documentData);
+    
+    const docRef = await addDoc(collection(db, collectionName), documentData);
+    
+    console.log('Blacklist request submitted with ID:', docRef.id);
+
+    setMessage('Blacklist request submitted! Awaiting director approval.');
+    setMessageType('success');
+    setBlacklistRequest({ 
+      type: 'address',
+      value: '',
+      reason: '',
+      scope: 'permanent',
+      appliesToPickup: true,
+      appliesToDropoff: true
+    });
+    setShowBlacklistModal(false);
+
+    setTimeout(() => {
+      setMessage('');
+      setMessageType('');
+    }, 3000);
+  } catch (error) {
+    console.error('Error submitting blacklist request:', error);
+    setMessage('Error submitting blacklist request: ' + error.message);
+    setMessageType('error');
+  } finally {
+    setBlacklistLoading(false);
+  }
+};
 
   const handlePickupChange = (value) => {
     setFormData({...formData, pickup: value});
@@ -350,19 +533,27 @@ const PhoneRoom = () => {
     setDropoffSuggestions([]);
   };
 
+  const handleBlacklistValueChange = (value) => {
+    setBlacklistRequest({...blacklistRequest, value: value});
+    if (blacklistRequest.type === 'address') {
+      fetchAddressSuggestions(value, setBlacklistAddressSuggestions);
+      setShowBlacklistSuggestions(true);
+    }
+  };
+
+  const selectBlacklistSuggestion = (value) => {
+    setBlacklistRequest({...blacklistRequest, value: value});
+    setShowBlacklistSuggestions(false);
+    setBlacklistAddressSuggestions([]);
+  };
+
   const handleBlacklistAddressChange = (value) => {
     setBlacklistRequest({...blacklistRequest, address: value});
     fetchAddressSuggestions(value, setBlacklistAddressSuggestions);
     setShowBlacklistSuggestions(true);
   };
 
-  const selectBlacklistSuggestion = (address) => {
-    setBlacklistRequest({...blacklistRequest, address: address});
-    setShowBlacklistSuggestions(false);
-    setBlacklistAddressSuggestions([]);
-  };
 
-  // Show loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -374,12 +565,10 @@ const PhoneRoom = () => {
     );
   }
 
-  // Show error if Google Maps failed to load
   if (loadError) {
     console.error('Google Maps load error:', loadError);
   }
 
-  // Show gate if no active NDR
   if (!activeNDR) {
     return (
       <div className="space-y-6 p-4 md:p-0">
@@ -400,151 +589,6 @@ const PhoneRoom = () => {
     );
   }
 
-  const handleSubmit = async () => {
-    if (!formData.name || !formData.phone || !formData.pickup || !formData.dropoff) {
-      setMessage('Please fill in all fields');
-      setMessageType('error');
-      return;
-    }
-
-    setSubmitLoading(true);
-    setMessage('Verifying addresses...');
-    setMessageType('info');
-
-    try {
-      // Check if pickup address is blacklisted
-      if (isAddressBlacklisted(formData.pickup)) {
-        setMessage('⛔ Pickup address is blacklisted and cannot be used');
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
-      }
-
-      // Check if dropoff address is blacklisted
-      if (isAddressBlacklisted(formData.dropoff)) {
-        setMessage('⛔ Dropoff address is blacklisted and cannot be used');
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
-      }
-
-      // Validate pickup address is in Bryan/College Station
-      const pickupValidation = await verifyAddressInBCS(formData.pickup);
-      if (!pickupValidation.valid) {
-        setMessage(`Pickup address rejected: ${pickupValidation.reason}`);
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
-      }
-
-      // Validate dropoff address is in Bryan/College Station
-      const dropoffValidation = await verifyAddressInBCS(formData.dropoff);
-      if (!dropoffValidation.valid) {
-        setMessage(`Dropoff address rejected: ${dropoffValidation.reason}`);
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
-      }
-
-      setMessage('Checking phone blacklist...');
-
-      // Check phone blacklist
-      const blacklistRef = collection(db, 'blacklist');
-      const blacklistQuery = query(blacklistRef, where('number', '==', formData.phone));
-      const blacklistSnapshot = await new Promise((resolve) => {
-        const unsubscribe = onSnapshot(blacklistQuery, (snapshot) => {
-          unsubscribe();
-          resolve(snapshot);
-        });
-      });
-
-      if (!blacklistSnapshot.empty) {
-        setMessage('This phone number is blocked');
-        setMessageType('error');
-        setSubmitLoading(false);
-        return;
-      }
-
-      setMessage('Submitting request...');
-
-      await addDoc(collection(db, 'rides'), {
-        patronName: formData.name,
-        phone: formData.phone,
-        pickup: formData.pickup,
-        dropoff: formData.dropoff,
-        riders: formData.riders,
-        status: 'pending',
-        carNumber: null,
-        assignedDriver: null,
-        requestedAt: Timestamp.now(),
-        completedAt: null,
-        willingToCombine: false,
-        carInfo: null,
-        requestType: 'phone',
-        ndrId: activeNDR.id,
-        eventId: activeNDR.eventId,
-        // Store verified coordinates if available
-        pickupCoordinates: pickupValidation.coordinates || null,
-        dropoffCoordinates: dropoffValidation.coordinates || null
-      });
-
-      setMessage('Request submitted successfully!');
-      setMessageType('success');
-      setFormData({ name: '', phone: '', pickup: '', dropoff: '', riders: 1 });
-      
-      setTimeout(() => {
-        setMessage('');
-        setMessageType('');
-      }, 3000);
-    } catch (error) {
-      console.error('Error submitting request:', error);
-      setMessage('Error submitting request: ' + error.message);
-      setMessageType('error');
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
-
-  // Handle blacklist request submission
-  const handleBlacklistRequest = async () => {
-    if (!blacklistRequest.address || !blacklistRequest.reason) {
-      setMessage('Please enter both address and reason for blacklist request');
-      setMessageType('error');
-      return;
-    }
-
-    setBlacklistLoading(true);
-
-    try {
-      await addDoc(collection(db, 'addressBlacklist'), {
-        address: blacklistRequest.address,
-        reason: blacklistRequest.reason,
-        status: 'pending',
-        requestedAt: Timestamp.now(),
-        requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
-        requestedByUid: auth.currentUser?.uid || null,
-        approvedAt: null,
-        approvedBy: null
-      });
-
-      setMessage('Blacklist request submitted! Awaiting director approval.');
-      setMessageType('success');
-      setBlacklistRequest({ address: '', reason: '' });
-      setShowBlacklistModal(false);
-
-      setTimeout(() => {
-        setMessage('');
-        setMessageType('');
-      }, 3000);
-    } catch (error) {
-      console.error('Error submitting blacklist request:', error);
-      setMessage('Error submitting blacklist request: ' + error.message);
-      setMessageType('error');
-    } finally {
-      setBlacklistLoading(false);
-    }
-  };
-
   return (
     <div className="space-y-6 p-4 md:p-0">
       {/* Header */}
@@ -559,14 +603,14 @@ const PhoneRoom = () => {
             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 border-2 border-gray-300"
           >
             <Shield size={16} />
-            View Blacklisted Addresses
+            View Blacklists
           </button>
           <button
             onClick={() => setShowBlacklistModal(true)}
             className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 shadow-lg"
           >
             <AlertTriangle size={16} />
-            Request Address Blacklist
+            Request Blacklist
           </button>
           <div className="bg-[#79F200] px-6 py-3 rounded-xl shadow-lg">
             <p className="text-sm font-medium text-gray-900">Active NDR</p>
@@ -722,19 +766,17 @@ const PhoneRoom = () => {
               <input
                 type="number"
                 min="1"
-                max="8"
+                max="10"
                 value={formData.riders}
                 onChange={(e) => setFormData({...formData, riders: parseInt(e.target.value) || 1})}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
               />
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
               <p className="text-sm text-blue-800 font-medium flex items-start gap-2">
-                <span className="text-lg">ℹ️</span>
+                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
                 <span>
-                  <strong>Service Area:</strong> Only addresses within Bryan or College Station city limits (zip codes 77801-77845) will be accepted.
-                  {isLoaded && ' Addresses are verified using Google Maps geocoding when you submit.'} 
                   You can select any address from suggestions, but addresses outside the service area will be rejected.
                 </span>
               </p>
@@ -765,14 +807,14 @@ const PhoneRoom = () => {
       {showBlacklistModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-orange-500 p-6 rounded-t-2xl">
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 p-6 rounded-t-2xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
                     <AlertTriangle className="text-orange-500" size={24} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">Request Address Blacklist</h3>
+                    <h3 className="text-xl font-bold text-white">Request Blacklist</h3>
                     <p className="text-white/90 text-sm">Requires director approval</p>
                   </div>
                 </div>
@@ -785,28 +827,136 @@ const PhoneRoom = () => {
               </div>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-5">
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                 <p className="text-sm text-yellow-800">
                   <strong>Note:</strong> This request will be pending until a director approves it. 
-                  Only approved addresses will be blocked from ride requests.
+                  Only approved entries will be blocked.
                 </p>
               </div>
 
+              {/* Type Selection */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-3">Blacklist Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBlacklistRequest({...blacklistRequest, type: 'address', value: ''})}
+                    className={`p-4 rounded-xl border-2 transition ${
+                      blacklistRequest.type === 'address'
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <MapPin className={`mx-auto mb-2 ${blacklistRequest.type === 'address' ? 'text-orange-500' : 'text-gray-400'}`} size={24} />
+                    <p className={`font-semibold text-sm ${blacklistRequest.type === 'address' ? 'text-orange-700' : 'text-gray-700'}`}>
+                      Address
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Block a location</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBlacklistRequest({...blacklistRequest, type: 'phone', value: ''})}
+                    className={`p-4 rounded-xl border-2 transition ${
+                      blacklistRequest.type === 'phone'
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <Phone className={`mx-auto mb-2 ${blacklistRequest.type === 'phone' ? 'text-orange-500' : 'text-gray-400'}`} size={24} />
+                    <p className={`font-semibold text-sm ${blacklistRequest.type === 'phone' ? 'text-orange-700' : 'text-gray-700'}`}>
+                      Phone Number
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Block a caller</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Scope Selection */}
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-3">Duration</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBlacklistRequest({...blacklistRequest, scope: 'permanent'})}
+                    className={`p-3 rounded-xl border-2 transition text-left ${
+                      blacklistRequest.scope === 'permanent'
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <p className={`font-semibold text-sm ${blacklistRequest.scope === 'permanent' ? 'text-red-700' : 'text-gray-700'}`}>
+                      🔒 Permanent
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">All future NDRs</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBlacklistRequest({...blacklistRequest, scope: 'temporary'})}
+                    className={`p-3 rounded-xl border-2 transition text-left ${
+                      blacklistRequest.scope === 'temporary'
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <p className={`font-semibold text-sm ${blacklistRequest.scope === 'temporary' ? 'text-orange-700' : 'text-gray-700'}`}>
+                      ⏱️ Temporary
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Current NDR only</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Address-specific options */}
+              {blacklistRequest.type === 'address' && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-3">Apply To</label>
+                  <div className="space-y-2 bg-gray-50 rounded-xl p-4">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={blacklistRequest.appliesToPickup}
+                        onChange={(e) => setBlacklistRequest({...blacklistRequest, appliesToPickup: e.target.checked})}
+                        className="w-5 h-5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-gray-900">Pickups</span>
+                        <p className="text-xs text-gray-500">Block this address as a pickup location</p>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={blacklistRequest.appliesToDropoff}
+                        onChange={(e) => setBlacklistRequest({...blacklistRequest, appliesToDropoff: e.target.checked})}
+                        className="w-5 h-5 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-gray-900">Dropoffs</span>
+                        <p className="text-xs text-gray-500">Block this address as a dropoff location</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Value Input */}
               <div className="relative" ref={blacklistAddressRef}>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Address to Blacklist
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  {blacklistRequest.type === 'address' ? 'Address' : 'Phone Number'} *
                 </label>
                 <input
                   type="text"
-                  value={blacklistRequest.address}
-                  onChange={(e) => handleBlacklistAddressChange(e.target.value)}
-                  onFocus={() => setShowBlacklistSuggestions(true)}
+                  value={blacklistRequest.value}
+                  onChange={(e) => handleBlacklistValueChange(e.target.value)}
+                  onFocus={() => blacklistRequest.type === 'address' && setShowBlacklistSuggestions(true)}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition outline-none text-gray-900"
-                  placeholder="Start typing address..."
+                  placeholder={blacklistRequest.type === 'address' ? 'Start typing address...' : '(555) 123-4567'}
                   autoComplete="off"
                 />
-                {showBlacklistSuggestions && blacklistAddressSuggestions.length > 0 && (
+                {blacklistRequest.type === 'address' && showBlacklistSuggestions && blacklistAddressSuggestions.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                     {blacklistAddressSuggestions.map((suggestion, index) => (
                       <div
@@ -822,29 +972,31 @@ const PhoneRoom = () => {
                 )}
               </div>
 
+              {/* Reason Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Reason for Blacklist
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Reason for Blacklist *
                 </label>
                 <textarea
                   value={blacklistRequest.reason}
                   onChange={(e) => setBlacklistRequest({...blacklistRequest, reason: e.target.value})}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition outline-none text-gray-900 min-h-[100px]"
-                  placeholder="Explain why this address should be blacklisted..."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition outline-none text-gray-900 min-h-[100px] resize-none"
+                  placeholder="Explain why this should be blacklisted..."
                 />
               </div>
 
-              <div className="flex gap-3">
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowBlacklistModal(false)}
-                  className="flex-1 py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-xl transition font-semibold"
+                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleBlacklistRequest}
-                  disabled={blacklistLoading}
-                  className="flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  disabled={blacklistLoading || !blacklistRequest.value || !blacklistRequest.reason}
+                  className="flex-1 py-3 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-xl transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg"
                 >
                   {blacklistLoading ? (
                     <>
@@ -867,16 +1019,18 @@ const PhoneRoom = () => {
       {/* Blacklist Viewer Modal */}
       {showBlacklistViewer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-red-500 p-6 rounded-t-2xl sticky top-0">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="bg-gradient-to-r from-red-500 to-pink-500 p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
                     <Shield className="text-red-500" size={24} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">Blacklisted Addresses</h3>
-                    <p className="text-white/90 text-sm">{blacklistedAddresses.length} approved addresses</p>
+                    <h3 className="text-xl font-bold text-white">Blacklists</h3>
+                    <p className="text-white/90 text-sm">
+                      {blacklistedAddresses.length} addresses, {blacklistedPhones.length} phones
+                    </p>
                   </div>
                 </div>
                 <button
@@ -888,34 +1042,126 @@ const PhoneRoom = () => {
               </div>
             </div>
 
-            <div className="p-6">
-              {blacklistedAddresses.length === 0 ? (
-                <div className="text-center py-12">
-                  <Shield className="mx-auto text-gray-300 mb-4" size={48} />
-                  <p className="text-gray-500 font-medium">No blacklisted addresses</p>
-                  <p className="text-sm text-gray-400 mt-2">Approved blacklist requests will appear here</p>
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 bg-gray-50 px-6">
+              <button
+                onClick={() => setViewerTab('addresses')}
+                className={`px-6 py-3 font-semibold text-sm transition relative ${
+                  viewerTab === 'addresses'
+                    ? 'text-red-600 border-b-2 border-red-600 -mb-px'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} />
+                  <span>Addresses ({blacklistedAddresses.length})</span>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {blacklistedAddresses.map((item) => (
-                    <div key={item.id} className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <MapPin className="text-red-500 flex-shrink-0 mt-1" size={20} />
-                        <div className="flex-1">
-                          <p className="font-semibold text-gray-900">{item.address}</p>
-                          <p className="text-sm text-gray-600 mt-1">
-                            <strong>Reason:</strong> {item.reason}
-                          </p>
-                          {item.approvedBy && (
-                            <p className="text-xs text-gray-500 mt-2">
-                              Approved by {item.approvedBy} on {item.approvedAt?.toDate().toLocaleDateString()}
+              </button>
+              <button
+                onClick={() => setViewerTab('phones')}
+                className={`px-6 py-3 font-semibold text-sm transition relative ${
+                  viewerTab === 'phones'
+                    ? 'text-red-600 border-b-2 border-red-600 -mb-px'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Phone size={16} />
+                  <span>Phone Numbers ({blacklistedPhones.length})</span>
+                </div>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {viewerTab === 'addresses' ? (
+                blacklistedAddresses.length === 0 ? (
+                  <div className="text-center py-12">
+                    <MapPin className="mx-auto text-gray-300 mb-4" size={48} />
+                    <p className="text-gray-500 font-medium">No blacklisted addresses</p>
+                    <p className="text-sm text-gray-400 mt-2">Approved blacklist requests will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {blacklistedAddresses.map((item) => (
+                      <div key={item.id} className="bg-red-50 border-2 border-red-200 rounded-xl p-4 hover:shadow-md transition">
+                        <div className="flex items-start gap-3">
+                          <MapPin className="text-red-500 flex-shrink-0 mt-1" size={20} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <p className="font-semibold text-gray-900 break-words">{item.address}</p>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                                  item.scope === 'temporary' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {item.scope === 'temporary' ? 'TEMP' : 'PERM'}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              <strong>Reason:</strong> {item.reason}
                             </p>
-                          )}
+                            {(item.appliesToPickup !== undefined || item.appliesToDropoff !== undefined) && (
+                              <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                                <span className="font-medium">Applies to:</span>
+                                {item.appliesToPickup && item.appliesToDropoff ? (
+                                  <span className="px-2 py-0.5 bg-gray-100 rounded">Pickup & Dropoff</span>
+                                ) : item.appliesToPickup ? (
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">Pickup Only</span>
+                                ) : item.appliesToDropoff ? (
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">Dropoff Only</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-gray-100 rounded">None</span>
+                                )}
+                              </div>
+                            )}
+                            {item.approvedBy && (
+                              <p className="text-xs text-gray-500">
+                                Approved by {item.approvedBy} on {item.approvedAt?.toDate().toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                blacklistedPhones.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Phone className="mx-auto text-gray-300 mb-4" size={48} />
+                    <p className="text-gray-500 font-medium">No blacklisted phone numbers</p>
+                    <p className="text-sm text-gray-400 mt-2">Approved blacklist requests will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {blacklistedPhones.map((item) => (
+                      <div key={item.id} className="bg-red-50 border-2 border-red-200 rounded-xl p-4 hover:shadow-md transition">
+                        <div className="flex items-start gap-3">
+                          <Phone className="text-red-500 flex-shrink-0 mt-1" size={20} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <p className="font-semibold text-gray-900 text-lg">{item.phone}</p>
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                                item.scope === 'temporary' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'
+                              }`}>
+                                {item.scope === 'temporary' ? 'TEMP' : 'PERM'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">
+                              <strong>Reason:</strong> {item.reason}
+                            </p>
+                            {item.approvedBy && (
+                              <p className="text-xs text-gray-500">
+                                Approved by {item.approvedBy} on {item.approvedAt?.toDate().toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           </div>

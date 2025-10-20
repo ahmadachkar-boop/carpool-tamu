@@ -13,6 +13,8 @@ import NDRReports from './components/NDRReports';
 import Members from './components/Members';
 import Register from './components/Register';
 import AddressBlacklistManager from './components/AddressBlacklistManager';
+import MemberProfile from './components/MemberProfile';
+import AnnouncementsManager from './components/AnnouncementsManager';
 
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -45,6 +47,7 @@ const MainApp = () => {
             <Route path="/phone-room" element={<PhoneRoom />} />
             <Route path="/ride-management" element={<RideManagement />} />
             <Route path="/calendar" element={<EventCalendar />} />
+            <Route path="/profile" element={<MemberProfile />} />
             <Route 
               path="/manage-events" 
               element={
@@ -69,6 +72,22 @@ const MainApp = () => {
                 </ProtectedRoute>
               } 
             />
+            <Route 
+              path="/address-blacklist" 
+              element={
+                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                  <AddressBlacklistManager />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/announcements" 
+              element={
+                <ProtectedRoute allowedRoles={['director', 'deputy']}>
+                  <AnnouncementsManager />
+                </ProtectedRoute>
+              } 
+            />
           </Routes>
         </div>
       </div>
@@ -81,7 +100,6 @@ const App = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      <Route path="/address-blacklist" element={<AddressBlacklistManager />} />
       <Route 
         path="/*" 
         element={
