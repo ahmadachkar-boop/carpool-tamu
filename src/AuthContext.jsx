@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   createUserWithEmailAndPassword 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const AuthContext = createContext();
 
@@ -46,6 +46,26 @@ export const AuthProvider = ({ children }) => {
     return user;
   };
 
+  // Function to manually refresh user profile
+  const refreshUserProfile = async (uid) => {
+    try {
+      const docRef = doc(db, 'members', uid);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const profile = {
+          id: uid,
+          ...docSnap.data()
+        };
+        console.log('[Auth] Profile refreshed:', profile.name, 'tempPassword:', profile.tempPassword, 'profileCompleted:', profile.profileCompleted);
+        setUserProfile(profile);
+        return profile;
+      }
+    } catch (error) {
+      console.error('[Auth] Error refreshing profile:', error);
+    }
+  };
+
   useEffect(() => {
     console.log('[Auth] Setting up auth listener...');
     
@@ -55,30 +75,37 @@ export const AuthProvider = ({ children }) => {
       setCurrentUser(user);
       
       if (user) {
-        try {
-          const docRef = doc(db, 'members', user.uid);
-          const docSnap = await getDoc(docRef);
-          
+        // Use real-time listener for user profile instead of one-time fetch
+        const docRef = doc(db, 'members', user.uid);
+        
+        const unsubscribeProfile = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const profile = {
               id: user.uid,
               ...docSnap.data()
             };
-            console.log('[Auth] User profile loaded:', profile.name, profile.role);
+            console.log('[Auth] User profile updated:', profile.name, 'tempPassword:', profile.tempPassword, 'profileCompleted:', profile.profileCompleted);
             setUserProfile(profile);
           } else {
             console.log('[Auth] No user profile found in Firestore');
             setUserProfile(null);
           }
-        } catch (error) {
-          console.error('[Auth] Error fetching user profile:', error);
+        }, (error) => {
+          console.error('[Auth] Error listening to profile:', error);
           setUserProfile(null);
-        }
+        });
+        
+        setLoading(false);
+        
+        // Return cleanup function for profile listener
+        return () => {
+          console.log('[Auth] Cleaning up profile listener');
+          unsubscribeProfile();
+        };
       } else {
         setUserProfile(null);
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
     return () => {
@@ -92,7 +119,8 @@ export const AuthProvider = ({ children }) => {
     userProfile,
     login,
     logout,
-    signup
+    signup,
+    refreshUserProfile
   };
 
   return (

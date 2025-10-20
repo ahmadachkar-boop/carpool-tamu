@@ -1,32 +1,18 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { auth, db } from '../firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, Timestamp, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { User, Mail, Lock, Phone, AlertCircle, ArrowLeft, Clock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { db } from '../firebase';
+import { collection, query, where, getDocs, addDoc, Timestamp } from 'firebase/firestore';
+import { User, Mail, AlertCircle, Clock, CheckCircle } from 'lucide-react';
 
 const Register = () => {
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    password: '',
-    confirmPassword: '',
-    phone: '',
-    gender: '',
-    pronouns: '',
-    address: '',
-    city: '',
-    state: '',
-    zip: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    carInfo: '',
-    dietaryRestrictions: ''
+    gender: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [pendingApproval, setPendingApproval] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleChange = (e) => {
     setFormData({
@@ -35,40 +21,23 @@ const Register = () => {
     });
   };
 
-  const checkEmailApproval = async (email) => {
+  const checkEmailExists = async (email) => {
     try {
       const approvalsRef = collection(db, 'emailApprovals');
       const q = query(approvalsRef, where('email', '==', email.toLowerCase()));
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
-        return { approved: false, exists: false };
+        return { exists: false };
       }
       
       const approval = snapshot.docs[0].data();
       return { 
-        approved: approval.status === 'approved', 
         exists: true,
         status: approval.status 
       };
     } catch (error) {
-      console.error('Error checking email approval:', error);
-      throw error;
-    }
-  };
-
-  const requestApproval = async (email, name) => {
-    try {
-      await addDoc(collection(db, 'emailApprovals'), {
-        email: email.toLowerCase(),
-        name: name,
-        status: 'pending',
-        createdAt: Timestamp.now(),
-        requestedAt: Timestamp.now(),  // ADD THIS LINE
-        approved: false
-      });
-    } catch (error) {
-      console.error('Error requesting approval:', error);
+      console.error('Error checking email:', error);
       throw error;
     }
   };
@@ -76,372 +45,221 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setPendingApproval(false);
+    setSuccess(false);
 
     // Validation
-    if (!formData.name || !formData.email || !formData.password || !formData.phone) {
+    if (!formData.name || !formData.email || !formData.gender) {
       setError('Please fill in all required fields');
       return;
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Check if email is approved
-      const emailCheck = await checkEmailApproval(formData.email);
+      // Check if email already exists
+      const emailCheck = await checkEmailExists(formData.email);
       
-      if (!emailCheck.approved) {
-        if (emailCheck.exists && emailCheck.status === 'pending') {
-          setError('Your email is pending admin approval. Please wait for approval before creating an account.');
-          setPendingApproval(true);
-          setLoading(false);
-          return;
-        } else if (emailCheck.exists && emailCheck.status === 'rejected') {
-          setError('Your email has been rejected. Please contact an administrator.');
-          setLoading(false);
-          return;
-        } else {
-          // Email not in system - create pending request
-          await requestApproval(formData.email, formData.name);
-          setError('Your email needs approval. We\'ve submitted a request to the administrators. You\'ll be notified when approved.');
-          setPendingApproval(true);
-          setLoading(false);
-          return;
+      if (emailCheck.exists) {
+        if (emailCheck.status === 'pending') {
+          setError('Your registration request is already pending approval. Please wait for administrator review.');
+        } else if (emailCheck.status === 'approved') {
+          setError('This email has already been approved. Please check your email for your temporary password.');
+        } else if (emailCheck.status === 'rejected') {
+          setError('Your registration request was rejected. Please contact an administrator for more information.');
         }
+        setLoading(false);
+        return;
       }
 
-      // Email is approved - proceed with registration
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-
-      // Create member document in Firestore
-      await setDoc(doc(db, 'members', userCredential.user.uid), {
+      // Create new pending approval request
+      await addDoc(collection(db, 'emailApprovals'), {
+        email: formData.email.toLowerCase(),
         name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        role: 'member',
         gender: formData.gender,
-        pronouns: formData.pronouns,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        zip: formData.zip,
-        emergencyContact: formData.emergencyContact,
-        emergencyPhone: formData.emergencyPhone,
-        carInfo: formData.carInfo,
-        dietaryRestrictions: formData.dietaryRestrictions,
-        points: 0,
-        nightsWorked: 0,
-        createdAt: Timestamp.now()
+        status: 'pending',
+        createdAt: Timestamp.now(),
+        requestedAt: Timestamp.now(),
+        approved: false
       });
 
-      alert('Registration successful! You can now log in.');
-      navigate('/login');
+      setSuccess(true);
+      setFormData({ name: '', email: '', gender: '' });
+      
     } catch (error) {
-      console.error('Error creating account:', error);
-      setError('Error creating account: ' + error.message);
+      console.error('Error submitting request:', error);
+      setError('An error occurred while submitting your request. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-[#500000] via-[#79F200] to-[#500000] flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
-        {/* Back to Login Button */}
-        <Link 
-          to="/login" 
-          className="inline-flex items-center gap-2 text-white hover:text-gray-200 mb-6 font-semibold transition-colors"
-        >
-          <ArrowLeft size={20} />
-          Back to Login
-        </Link>
+  if (success) {
+    return (
+      <div className="min-h-screen bg-[#79F200] flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -left-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
+          <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        </div>
 
-        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-[#500000] to-[#79F200] p-8 text-center">
-            <h2 className="text-4xl font-black text-white mb-2">Join TAMU Carpool</h2>
-            <p className="text-white/90 text-lg font-medium">Create your account to start carpooling</p>
-          </div>
+        <div className="w-full max-w-md relative z-10">
+          <div className="bg-white rounded-3xl shadow-2xl p-10">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-6">
+                <CheckCircle className="text-green-600" size={40} />
+              </div>
+              
+              <h2 className="text-3xl font-black text-gray-900 mb-4">
+                Request Submitted!
+              </h2>
+              
+              <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 mb-6">
+                <p className="text-gray-700 leading-relaxed">
+                  Your registration request has been submitted successfully. 
+                  You'll receive a confirmation email shortly at <strong>{formData.email || 'your email'}</strong>.
+                </p>
+                <p className="text-gray-700 mt-4 leading-relaxed">
+                  Once an administrator approves your request, you'll receive another email 
+                  with a temporary password to access your account.
+                </p>
+              </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
-            {/* Error/Pending Message */}
-            {error && (
-              <div className={`p-4 rounded-xl flex items-start gap-3 ${
-                pendingApproval 
-                  ? 'bg-yellow-50 border-2 border-yellow-200' 
-                  : 'bg-red-50 border-2 border-red-200'
-              }`}>
-                {pendingApproval ? (
-                  <Clock className="flex-shrink-0 text-yellow-600 mt-0.5" size={20} />
-                ) : (
-                  <AlertCircle className="flex-shrink-0 text-red-600 mt-0.5" size={20} />
-                )}
-                <div className="flex-1">
-                  <p className={`font-semibold ${
-                    pendingApproval ? 'text-yellow-800' : 'text-red-800'
-                  }`}>
-                    {error}
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <Clock className="text-yellow-600 flex-shrink-0 mt-1" size={20} />
+                  <p className="text-sm text-gray-700 text-left">
+                    <strong>What's next?</strong> Your request will be reviewed by an administrator. 
+                    This typically takes 24-48 hours. Please check your email regularly.
                   </p>
-                  {pendingApproval && (
-                    <p className="text-yellow-700 text-sm mt-2">
-                      Check back later or contact an administrator for faster approval.
-                    </p>
-                  )}
+                </div>
+              </div>
+
+              <Link
+                to="/login"
+                className="inline-block w-full py-4 bg-[#79F200] text-gray-900 rounded-xl font-black text-lg hover:opacity-90 transition-opacity"
+              >
+                Back to Login
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#79F200] flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6">
+            <span className="text-6xl">🚗</span>
+          </div>
+          <h1 className="text-5xl font-black text-white mb-3">
+            TAMU Carpool
+          </h1>
+          <p className="text-white/90 text-lg font-semibold">
+            Request Registration
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-2xl p-8">
+          <h2 className="text-2xl font-black text-gray-900 mb-2">
+            Join Our Community
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Submit a registration request to get started
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+                  <p className="text-sm text-red-800 font-medium">{error}</p>
                 </div>
               </div>
             )}
 
-            {/* Basic Information */}
-            <div className="space-y-5">
-              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
-                Basic Information
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Full Name *</label>
-                  <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="John Doe"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Email *</label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="you@tamu.edu"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Password *</label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="password"
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="Min. 6 characters"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Confirm Password *</label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="password"
-                      name="confirmPassword"
-                      value={formData.confirmPassword}
-                      onChange={handleChange}
-                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="Confirm password"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Phone Number *</label>
-                  <div className="relative">
-                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="(555) 123-4567"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Gender</label>
-                  <input
-                    type="text"
-                    name="gender"
-                    value={formData.gender}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                    placeholder="e.g., Male, Female, Non-binary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Pronouns</label>
-                  <input
-                    type="text"
-                    name="pronouns"
-                    value={formData.pronouns}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                    placeholder="e.g., he/him, she/her, they/them"
-                  />
-                </div>
+            {/* Full Name */}
+            <div>
+              <label className="block text-sm font-bold text-gray-900 mb-3">
+                Full Name *
+              </label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="John Doe"
+                  required
+                />
               </div>
             </div>
 
-            {/* Address Information */}
-            <div className="space-y-5">
-              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
-                Address Information
-              </h3>
-
-              <div className="grid grid-cols-1 gap-5">
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Street Address</label>
-                  <input
-                    type="text"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                    placeholder="123 Main St"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-3">City</label>
-                    <input
-                      type="text"
-                      name="city"
-                      value={formData.city}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="College Station"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-3">State</label>
-                    <input
-                      type="text"
-                      name="state"
-                      value={formData.state}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="TX"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-3">ZIP Code</label>
-                    <input
-                      type="text"
-                      name="zip"
-                      value={formData.zip}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                      placeholder="77840"
-                    />
-                  </div>
-                </div>
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-bold text-gray-900 mb-3">
+                Email *
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                  placeholder="you@tamu.edu"
+                  required
+                />
               </div>
             </div>
 
-            {/* Emergency Contact */}
-            <div className="space-y-5">
-              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
-                Emergency Contact
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Emergency Contact Name</label>
-                  <input
-                    type="text"
-                    name="emergencyContact"
-                    value={formData.emergencyContact}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                    placeholder="Jane Doe"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Emergency Contact Phone</label>
-                  <input
-                    type="tel"
-                    name="emergencyPhone"
-                    value={formData.emergencyPhone}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
-                    placeholder="(555) 987-6543"
-                  />
-                </div>
-              </div>
+            {/* Gender */}
+            <div>
+              <label className="block text-sm font-bold text-gray-900 mb-3">
+                Gender *
+              </label>
+              <select
+                name="gender"
+                value={formData.gender}
+                onChange={handleChange}
+                className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium"
+                required
+              >
+                <option value="">Select gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Non-binary">Non-binary</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+              </select>
             </div>
 
-            {/* Additional Information */}
-            <div className="space-y-5">
-              <h3 className="text-xl font-black text-gray-900 pb-2 border-b-4 border-[#79F200]">
-                Additional Information
-              </h3>
-
-              <div className="grid grid-cols-1 gap-5">
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Car Information</label>
-                  <textarea
-                    name="carInfo"
-                    value={formData.carInfo}
-                    onChange={handleChange}
-                    rows="2"
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium resize-none"
-                    placeholder="e.g., 2020 Honda Civic, Blue, 5 seats"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Dietary Restrictions</label>
-                  <textarea
-                    name="dietaryRestrictions"
-                    value={formData.dietaryRestrictions}
-                    onChange={handleChange}
-                    rows="2"
-                    className="w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:border-[#79F200] focus:ring-4 focus:ring-[#79F200]/20 transition-all outline-none font-medium resize-none"
-                    placeholder="e.g., Vegetarian, Gluten-free, Nut allergy"
-                  />
-                </div>
-              </div>
+            {/* Info Box */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> After approval, you'll receive an email with a temporary password. 
+                You'll be required to change it and complete your profile on first login.
+              </p>
             </div>
 
             {/* Submit Button */}
@@ -450,7 +268,7 @@ const Register = () => {
               disabled={loading}
               className="w-full py-4 bg-gradient-to-r from-[#500000] to-[#79F200] text-white rounded-xl font-black text-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
-              {loading ? 'Creating Account...' : 'Create Account'}
+              {loading ? 'Submitting Request...' : 'Submit Registration Request'}
             </button>
 
             {/* Login Link */}
@@ -461,6 +279,11 @@ const Register = () => {
               </Link>
             </p>
           </form>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-white/80 text-sm font-medium">
+          <p>© 2025 TAMU Carpool. All rights reserved.</p>
         </div>
       </div>
     </div>

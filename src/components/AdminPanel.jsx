@@ -413,15 +413,60 @@ const AdminPanel = () => {
         </div>
       </div>
 
-      {/* Info Box */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6">
-        <h3 className="font-bold text-blue-900 mb-2">How Email Approval Works</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• <strong>Pre-Approve:</strong> Add emails before users register - they can create accounts immediately</li>
-          <li>• <strong>Pending:</strong> Users who tried to register but weren't pre-approved - review and approve/reject</li>
-          <li>• <strong>Note:</strong> Approved users will receive an invitation email (requires email service setup)</li>
+
+{/* Info Box */}
+<div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6">
+  <h3 className="font-bold text-blue-900 mb-3 text-lg">📋 How the New Registration Process Works</h3>
+  
+  <div className="space-y-4 text-sm text-blue-800">
+    <div>
+      <h4 className="font-bold mb-2">1️⃣ User Submits Request</h4>
+      <ul className="list-disc list-inside space-y-1 ml-2">
+        <li>Users provide only: Name, Email, and Gender</li>
+        <li>They immediately receive a confirmation email</li>
+        <li>Request appears in "Pending" tab for admin review</li>
+      </ul>
+    </div>
+
+    <div>
+      <h4 className="font-bold mb-2">2️⃣ Admin Approves Request</h4>
+      <ul className="list-disc list-inside space-y-1 ml-2">
+        <li>Click "Approve" on pending request</li>
+        <li><strong>System automatically:</strong></li>
+        <ul className="list-circle list-inside ml-6 mt-1">
+          <li>Creates Firebase Auth account</li>
+          <li>Generates temporary password (10 characters)</li>
+          <li>Creates member profile in Firestore</li>
+          <li>Sends email with temporary password</li>
         </ul>
-      </div>
+      </ul>
+    </div>
+
+    <div>
+      <h4 className="font-bold mb-2">3️⃣ User First Login</h4>
+      <ul className="list-disc list-inside space-y-1 ml-2">
+        <li>User logs in with email + temporary password</li>
+        <li>System redirects to profile completion page</li>
+        <li>User must:</li>
+        <ul className="list-circle list-inside ml-6 mt-1">
+          <li>Change their password</li>
+          <li>Complete profile information (phone, address, etc.)</li>
+        </ul>
+        <li>After completion, full access is granted</li>
+      </ul>
+    </div>
+
+    <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-3 mt-4">
+      <p className="font-bold text-yellow-900 mb-1">⚠️ Important Notes:</p>
+      <ul className="list-disc list-inside space-y-1">
+        <li><strong>Pre-Approve:</strong> You can still pre-approve emails before users register</li>
+        <li><strong>Vehicle Info:</strong> No longer collected during registration</li>
+        <li><strong>Security:</strong> Users MUST change temporary password on first login</li>
+        <li><strong>Emails:</strong> Two automated emails are sent (confirmation + approval)</li>
+      </ul>
+    </div>
+  </div>
+</div>
     </div>
   );
 };

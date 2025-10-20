@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 
 const Login = () => {
@@ -17,11 +19,34 @@ const Login = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/');
+      // Log in the user
+      const userCredential = await login(email, password);
+      
+      // Check if user needs to complete profile
+      const userDoc = await getDoc(doc(db, 'members', userCredential.user.uid));
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        
+        // Check if they have a temporary password or incomplete profile
+        if (userData.tempPassword || !userData.profileCompleted) {
+          navigate('/complete-profile');
+        } else {
+          navigate('/');
+        }
+      } else {
+        // No profile found - shouldn't happen but redirect to complete profile
+        navigate('/complete-profile');
+      }
     } catch (error) {
-      setError('Invalid email or password');
       console.error('Login error:', error);
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        setError('Invalid email or password');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many failed login attempts. Please try again later.');
+      } else {
+        setError('An error occurred during login. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -39,39 +64,36 @@ const Login = () => {
       <div className="w-full max-w-md relative z-10">
         {/* Logo and Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6 transform hover:scale-110 transition-transform p-4">
-            <img 
-              src={`${process.env.PUBLIC_URL}/logo.png`}
-              alt="TAMU Carpool Logo" 
-              className="w-full h-full object-contain"
-              onError={(e) => {
-                console.error('Logo failed to load');
-                e.target.style.display = 'none';
-              }}
-            />
+          <div className="inline-flex items-center justify-center w-32 h-32 bg-white rounded-3xl shadow-2xl mb-6 transform hover:scale-110 transition-transform">
+            <span className="text-7xl">🚗</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-black text-white mb-3 drop-shadow-lg">
+          <h1 className="text-5xl font-black text-white mb-3 tracking-tight">
             TAMU Carpool
           </h1>
-          <p className="text-white/90 text-lg font-medium">Safe rides, anytime, anywhere</p>
+          <p className="text-white/90 text-xl font-semibold">
+            Gig 'em together! 👍
+          </p>
         </div>
 
-        {/* Login Card */}
-        <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-10">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-          <p className="text-gray-600 mb-8 text-base">Sign in to continue to your dashboard</p>
-
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-3">
-              <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={22} />
-              <p className="text-red-700 text-sm font-medium">{error}</p>
-            </div>
-          )}
+        {/* Login Form */}
+        <div className="bg-white rounded-3xl shadow-2xl p-10">
+          <h2 className="text-3xl font-black text-gray-900 mb-8 text-center">
+            Welcome Back
+          </h2>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+                  <p className="text-sm text-red-800 font-medium">{error}</p>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-bold text-gray-900 mb-3">
-                Email Address
+                Email
               </label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={22} />
@@ -129,7 +151,7 @@ const Login = () => {
                 to="/register" 
                 className="text-[#79F200] hover:text-[#5bc000] font-bold transition-colors"
               >
-                Sign up here
+                Request registration
               </Link>
             </p>
           </div>
