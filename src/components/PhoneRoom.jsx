@@ -9,7 +9,9 @@ const libraries = ['places'];
 const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 
 const PhoneRoom = () => {
-   // Phone number formatting function
+  const { activeNDR, loading } = useActiveNDR();
+  
+  // Phone number formatting function
   const formatPhoneNumber = (value) => {
     const cleaned = value.replace(/\D/g, '');
     const limited = cleaned.slice(0, 10);
@@ -22,6 +24,7 @@ const PhoneRoom = () => {
       return `(${limited.slice(0, 3)}) ${limited.slice(3, 6)}-${limited.slice(6)}`;
     }
   };
+
   // Filter blacklists to only show active ones for current NDR
   const getActiveBlacklists = (blacklists, type) => {
     if (!activeNDR) return [];
@@ -38,7 +41,7 @@ const PhoneRoom = () => {
       return false;
     });
   };
-  const { activeNDR, loading } = useActiveNDR();
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -305,7 +308,6 @@ const PhoneRoom = () => {
   };
 
   // Check if address is blacklisted
- // Check if address is blacklisted
   const checkAddressBlacklist = async (address, type) => {
     if (!activeNDR) return { allowed: true };
     
@@ -488,85 +490,84 @@ const PhoneRoom = () => {
   };
 
   // Handle blacklist request submission
-const handleBlacklistRequest = async () => {
-  if (!blacklistRequest.value || !blacklistRequest.reason) {
-    setMessage('Please fill in all required fields');
-    setMessageType('error');
-    return;
-  }
-
-  // Validate phone number format if type is phone
-  if (blacklistRequest.type === 'phone') {
-    const phoneRegex = /^[\d\s\-\(\)]+$/;
-    if (!phoneRegex.test(blacklistRequest.value)) {
-      setMessage('Please enter a valid phone number');
+  const handleBlacklistRequest = async () => {
+    if (!blacklistRequest.value || !blacklistRequest.reason) {
+      setMessage('Please fill in all required fields');
       setMessageType('error');
       return;
     }
-  }
 
-  setBlacklistLoading(true);
-
-  try {
-    const now = Timestamp.now();
-    
-    // Choose the correct collection based on type
-    const collectionName = blacklistRequest.type === 'phone' ? 'phoneBlacklist' : 'addressBlacklist';
-    
-    // Build the base document data
-    // Build the base document data
-    const documentData = {
-      reason: blacklistRequest.reason,
-      scope: blacklistRequest.scope,
-      status: 'pending',
-      requestedAt: now,
-      createdAt: now,
-      requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
-      requestedByUid: auth.currentUser?.uid || null,
-      approvedAt: null,
-      approvedBy: null,
-      ndrId: blacklistRequest.scope === 'temporary' ? (activeNDR?.id || null) : null
-    };
-
-    // Add type-specific fields
+    // Validate phone number format if type is phone
     if (blacklistRequest.type === 'phone') {
-      documentData.phone = blacklistRequest.value;
-    } else {
-      documentData.address = blacklistRequest.value;
-      documentData.appliesToPickup = blacklistRequest.appliesToPickup;
-      documentData.appliesToDropoff = blacklistRequest.appliesToDropoff;
+      const phoneRegex = /^[\d\s\-\(\)]+$/;
+      if (!phoneRegex.test(blacklistRequest.value)) {
+        setMessage('Please enter a valid phone number');
+        setMessageType('error');
+        return;
+      }
     }
 
-    console.log('Submitting blacklist request:', documentData);
-    
-    const docRef = await addDoc(collection(db, collectionName), documentData);
-    
-    console.log('Blacklist request submitted with ID:', docRef.id);
+    setBlacklistLoading(true);
 
-    setMessage('Blacklist request submitted! Awaiting director approval.');
-    setMessageType('success');
-    setBlacklistRequest({ 
-      type: 'address',
-      value: '',
-      reason: '',
-      scope: 'permanent',
-      appliesToPickup: true,
-      appliesToDropoff: true
-    });
-    setShowBlacklistModal(false);
+    try {
+      const now = Timestamp.now();
+      
+      // Choose the correct collection based on type
+      const collectionName = blacklistRequest.type === 'phone' ? 'phoneBlacklist' : 'addressBlacklist';
+      
+      // Build the base document data
+      const documentData = {
+        reason: blacklistRequest.reason,
+        scope: blacklistRequest.scope,
+        status: 'pending',
+        requestedAt: now,
+        createdAt: now,
+        requestedBy: currentUser?.name || auth.currentUser?.email || 'Unknown User',
+        requestedByUid: auth.currentUser?.uid || null,
+        approvedAt: null,
+        approvedBy: null,
+        ndrId: blacklistRequest.scope === 'temporary' ? (activeNDR?.id || null) : null
+      };
 
-    setTimeout(() => {
-      setMessage('');
-      setMessageType('');
-    }, 3000);
-  } catch (error) {
-    console.error('Error submitting blacklist request:', error);
-    setMessage('Error submitting blacklist request: ' + error.message);
-    setMessageType('error');
-  } finally {
-    setBlacklistLoading(false);
-  }
-};
+      // Add type-specific fields
+      if (blacklistRequest.type === 'phone') {
+        documentData.phone = blacklistRequest.value;
+      } else {
+        documentData.address = blacklistRequest.value;
+        documentData.appliesToPickup = blacklistRequest.appliesToPickup;
+        documentData.appliesToDropoff = blacklistRequest.appliesToDropoff;
+      }
+
+      console.log('Submitting blacklist request:', documentData);
+      
+      const docRef = await addDoc(collection(db, collectionName), documentData);
+      
+      console.log('Blacklist request submitted with ID:', docRef.id);
+
+      setMessage('Blacklist request submitted! Awaiting director approval.');
+      setMessageType('success');
+      setBlacklistRequest({ 
+        type: 'address',
+        value: '',
+        reason: '',
+        scope: 'permanent',
+        appliesToPickup: true,
+        appliesToDropoff: true
+      });
+      setShowBlacklistModal(false);
+
+      setTimeout(() => {
+        setMessage('');
+        setMessageType('');
+      }, 3000);
+    } catch (error) {
+      console.error('Error submitting blacklist request:', error);
+      setMessage('Error submitting blacklist request: ' + error.message);
+      setMessageType('error');
+    } finally {
+      setBlacklistLoading(false);
+    }
+  };
 
   const handlePickupChange = (value) => {
     setFormData({...formData, pickup: value});
@@ -605,13 +606,6 @@ const handleBlacklistRequest = async () => {
     setShowBlacklistSuggestions(false);
     setBlacklistAddressSuggestions([]);
   };
-
-  const handleBlacklistAddressChange = (value) => {
-    setBlacklistRequest({...blacklistRequest, address: value});
-    fetchAddressSuggestions(value, setBlacklistAddressSuggestions);
-    setShowBlacklistSuggestions(true);
-  };
-
 
   if (loading) {
     return (
@@ -749,10 +743,10 @@ const handleBlacklistRequest = async () => {
                 Phone Number
               </label>
               <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: formatPhoneNumber(e.target.value)})}
-                  maxLength="14"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({...formData, phone: formatPhoneNumber(e.target.value)})}
+                maxLength="14"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
                 placeholder="(555) 123-4567"
               />
@@ -1091,9 +1085,9 @@ const handleBlacklistRequest = async () => {
                     <Shield className="text-red-500" size={24} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">Blacklists</h3>
+                    <h3 className="text-xl font-bold text-white">Active Blacklists</h3>
                     <p className="text-white/90 text-sm">
-                      {blacklistedAddresses.length} addresses, {blacklistedPhones.length} phones
+                      {getActiveBlacklists(blacklistedAddresses, 'address').length} addresses, {getActiveBlacklists(blacklistedPhones, 'phone').length} phones
                     </p>
                   </div>
                 </div>
@@ -1118,7 +1112,7 @@ const handleBlacklistRequest = async () => {
               >
                 <div className="flex items-center gap-2">
                   <MapPin size={16} />
-                  <span>Addresses ({blacklistedAddresses.length})</span>
+                  <span>Addresses ({getActiveBlacklists(blacklistedAddresses, 'address').length})</span>
                 </div>
               </button>
               <button
@@ -1131,23 +1125,23 @@ const handleBlacklistRequest = async () => {
               >
                 <div className="flex items-center gap-2">
                   <Phone size={16} />
-                  <span>Phone Numbers ({blacklistedPhones.length})</span>
+                  <span>Phone Numbers ({getActiveBlacklists(blacklistedPhones, 'phone').length})</span>
                 </div>
               </button>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {viewerTab === 'addresses' ? (
-                blacklistedAddresses.length === 0 ? (
+            {viewerTab === 'addresses' && (
+              <div className="flex-1 overflow-y-auto p-6">
+                {getActiveBlacklists(blacklistedAddresses, 'address').length === 0 ? (
                   <div className="text-center py-12">
-                    <MapPin className="mx-auto text-gray-300 mb-4" size={48} />
-                    <p className="text-gray-500 font-medium">No blacklisted addresses</p>
-                    <p className="text-sm text-gray-400 mt-2">Approved blacklist requests will appear here</p>
+                    <Shield className="mx-auto text-gray-300 mb-3" size={48} />
+                    <p className="text-gray-500 font-medium">No active address blacklists</p>
+                    <p className="text-gray-400 text-sm mt-1">for current NDR</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {blacklistedAddresses.map((item) => (
+                    {getActiveBlacklists(blacklistedAddresses, 'address').map((item) => (
                       <div key={item.id} className="bg-red-50 border-2 border-red-200 rounded-xl p-4 hover:shadow-md transition">
                         <div className="flex items-start gap-3">
                           <MapPin className="text-red-500 flex-shrink-0 mt-1" size={20} />
@@ -1189,17 +1183,21 @@ const handleBlacklistRequest = async () => {
                       </div>
                     ))}
                   </div>
-                )
-              ) : (
-                blacklistedPhones.length === 0 ? (
+                )}
+              </div>
+            )}
+
+            {viewerTab === 'phones' && (
+              <div className="flex-1 overflow-y-auto p-6">
+                {getActiveBlacklists(blacklistedPhones, 'phone').length === 0 ? (
                   <div className="text-center py-12">
-                    <Phone className="mx-auto text-gray-300 mb-4" size={48} />
-                    <p className="text-gray-500 font-medium">No blacklisted phone numbers</p>
-                    <p className="text-sm text-gray-400 mt-2">Approved blacklist requests will appear here</p>
+                    <Shield className="mx-auto text-gray-300 mb-3" size={48} />
+                    <p className="text-gray-500 font-medium">No active phone blacklists</p>
+                    <p className="text-gray-400 text-sm mt-1">for current NDR</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {blacklistedPhones.map((item) => (
+                    {getActiveBlacklists(blacklistedPhones, 'phone').map((item) => (
                       <div key={item.id} className="bg-red-50 border-2 border-red-200 rounded-xl p-4 hover:shadow-md transition">
                         <div className="flex items-start gap-3">
                           <Phone className="text-red-500 flex-shrink-0 mt-1" size={20} />
@@ -1225,9 +1223,9 @@ const handleBlacklistRequest = async () => {
                       </div>
                     ))}
                   </div>
-                )
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
