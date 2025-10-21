@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 // PASTE YOUR CONFIG HERE (replace the example below)
 const firebaseConfig = {
@@ -15,9 +16,23 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+// Enable auth persistence for PWA
+setPersistence(auth, browserLocalPersistence)
+  .then(() => console.log('✅ Auth persistence enabled'))
+  .catch((error) => console.error('❌ Auth persistence error:', error));
 
 // Initialize Firestore with standard configuration
 export const db = getFirestore(app);
+// Enable Firestore offline for PWA
+enableIndexedDbPersistence(db)
+  .then(() => console.log('✅ Firestore offline enabled'))
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('⚠️ Multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+      console.warn('⚠️ Persistence not available');
+    }
+  });
 
 // Enable offline persistence for consistent behavior across devices
 enableIndexedDbPersistence(db).catch((err) => {

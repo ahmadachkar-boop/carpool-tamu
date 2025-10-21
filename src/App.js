@@ -2,6 +2,7 @@ import React from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { ActiveNDRProvider } from './ActiveNDRContext';
+import { GoogleMapsProvider } from './GoogleMapsProvider'; // ADD THIS IMPORT
 import Login from './components/Login';
 import Register from './components/Register';
 import CompleteProfile from './components/CompleteProfile';
@@ -83,125 +84,130 @@ const AppLayout = ({ children }) => {
 function AppContent() {
   return (
     <ActiveNDRProvider>
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/login" element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        } />
-        <Route path="/register" element={
-          <PublicRoute>
-            <Register />
-          </PublicRoute>
-        } />
+      {/* ADD GoogleMapsProvider WRAPPER HERE */}
+      <GoogleMapsProvider>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          } />
+          <Route path="/register" element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          } />
 
-        {/* Profile Completion Route (authenticated but no profile check) */}
-        <Route path="/complete-profile" element={
-          <AuthOnlyRoute>
-            <CompleteProfile />
-          </AuthOnlyRoute>
-        } />
+          {/* Profile Completion Route (authenticated but no profile check) */}
+          <Route path="/complete-profile" element={
+            <AuthOnlyRoute>
+              <CompleteProfile />
+            </AuthOnlyRoute>
+          } />
 
-        {/* Protected Routes with Layout */}
-        <Route path="/" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <Dashboard />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          {/* Protected Routes with Layout */}
+          <Route path="/" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Dashboard />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/phone-room" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <PhoneRoom />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/phone-room" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <PhoneRoom />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/ride-management" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <RideManagement />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/ride-management" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <RideManagement />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/calendar" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <EventCalendar />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/calendar" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <EventCalendar />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/manage-events" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <ManageEvents />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/manage-events" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <ManageEvents />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/ndr-reports" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <NDRReports />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/ndr-reports" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <NDRReports />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/members" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <Members />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/members" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Members />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/address-blacklist" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <AddressBlacklistManager />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/address-blacklist" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <AddressBlacklistManager />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/announcements" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <AnnouncementsManager />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/announcements" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <AnnouncementsManager />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/profile" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <MemberProfile />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <MemberProfile />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        <Route path="/admin-panel" element={
-          <ProtectedRoute adminOnly={true}>
-            <AppLayout>
-              <AdminPanel />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/couch-navigator" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <CouchNavigator />
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+          <Route path="/admin-panel" element={
+            <ProtectedRoute adminOnly={true}>
+              <AppLayout>
+                <AdminPanel />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/couch-navigator" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <CouchNavigator />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </GoogleMapsProvider>
+      {/* CLOSE GoogleMapsProvider WRAPPER HERE */}
     </ActiveNDRProvider>
   );
 }
