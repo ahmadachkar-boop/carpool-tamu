@@ -6,7 +6,7 @@ import {
   clearNativeWatch,
   requestAlwaysLocationPermission
 } from '../capacitorUtils';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, orderBy, updateDoc, doc, Timestamp, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
@@ -16,6 +16,152 @@ import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission } from '../notificationUtils';
 import { Capacitor } from '@capacitor/core';
+
+// Memoized map component to prevent re-renders
+const StableMap = memo(({ initialCenter, onMapLoad, mapOptions, mapContainerStyle }) => {
+  console.log('🗺️ StableMap rendering');
+  return (
+    <GoogleMap
+      mapContainerStyle={mapContainerStyle}
+      defaultCenter={initialCenter}
+      defaultZoom={16}
+      onLoad={onMapLoad}
+      options={mapOptions}
+    />
+  );
+});
+StableMap.displayName = 'StableMap';
+
+// Memoized ETA display component
+const ETADisplay = memo(({ eta }) => {
+  if (!eta) return null;
+  
+  return (
+    <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-blue-800 uppercase">
+            ETA to {eta.destination}
+          </p>
+          <p className="text-2xl font-bold text-blue-900 mt-1">
+            {eta.eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+          <p className="text-sm text-blue-700 mt-1">
+            {eta.durationText} • {eta.distanceText}
+          </p>
+        </div>
+        <Clock size={32} className="text-blue-600" />
+      </div>
+    </div>
+  );
+});
+ETADisplay.displayName = 'ETADisplay';
+
+// Memoized route info display
+const RouteInfoDisplay = memo(({ routeInfo }) => {
+  if (!routeInfo) return null;
+  
+  return (
+    <div className="bg-purple-50 border border-purple-300 rounded-xl p-4">
+      <p className="text-xs font-semibold text-purple-800 uppercase mb-2">
+        Total Route
+      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-lg font-bold text-purple-900">
+            {routeInfo.durationText}
+          </p>
+          <p className="text-sm text-purple-700">
+            {routeInfo.distanceText} total
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+});
+RouteInfoDisplay.displayName = 'RouteInfoDisplay';
+
+// Memoized active ride display
+const ActiveRideDisplay = memo(({ rides }) => {
+  if (rides.length === 0) return null;
+  
+  return (
+    <>
+      {rides.map(ride => (
+        <div key={ride.id} className="border-2 border-green-200 bg-green-50 rounded-xl p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="font-bold text-gray-900">{ride.name}</p>
+              <p className="text-sm text-gray-600">{ride.phone}</p>
+              <div className="mt-2 space-y-1 text-sm">
+                <p className="flex items-center gap-1">
+                  <MapPin size={14} className="text-green-600" />
+                  <span className="font-medium">Pickup:</span> {ride.pickup}
+                </p>
+                {ride.dropoffs?.map((dropoff, idx) => (
+                  <p key={idx} className="flex items-center gap-1">
+                    <MapPin size={14} className="text-red-600" />
+                    <span className="font-medium">Drop {idx + 1}:</span> {dropoff}
+                  </p>
+                ))}
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
+              {ride.status}
+            </span>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+});
+ActiveRideDisplay.displayName = 'ActiveRideDisplay';
+
+// Memoized messages component
+const MessagesDisplay = memo(({ messages, messagesEndRef, viewMode }) => {
+  return (
+    <div className="h-80 overflow-y-auto mb-4 space-y-3 p-4 bg-gray-50 rounded-xl">
+      {messages.length === 0 ? (
+        <p className="text-center text-gray-500 py-8">No messages yet</p>
+      ) : (
+        messages.map(msg => (
+          <div
+            key={msg.id}
+            className={`flex ${
+              (viewMode === 'navigator' && msg.sender === 'navigator') ||
+              (viewMode === 'couch' && msg.sender === 'couch')
+                ? 'justify-end'
+                : 'justify-start'
+            }`}
+          >
+            <div
+              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                (viewMode === 'navigator' && msg.sender === 'navigator')
+                  ? 'bg-blue-600 text-white'
+                  : (viewMode === 'couch' && msg.sender === 'couch')
+                  ? 'bg-[#79F200] text-gray-900'
+                  : 'bg-white border border-gray-200 text-gray-900'
+              }`}
+            >
+              <p className="text-xs font-semibold mb-1 opacity-70">
+                {(viewMode === 'navigator' && msg.sender === 'navigator') ||
+                 (viewMode === 'couch' && msg.sender === 'couch')
+                  ? 'You' + (viewMode === 'couch' ? ' (Couch)' : '')
+                  : msg.senderName}
+              </p>
+              <p className="text-sm">{msg.message}</p>
+              <p className="text-xs opacity-60 mt-1">
+                {msg.timestamp?.toLocaleTimeString()}
+              </p>
+            </div>
+          </div>
+        ))
+      )}
+      <div ref={messagesEndRef} />
+    </div>
+  );
+});
+MessagesDisplay.displayName = 'MessagesDisplay';
 
 const CouchNavigator = () => {
   useEffect(() => {
@@ -47,6 +193,7 @@ const CouchNavigator = () => {
   const [lastLocationUpdate, setLastLocationUpdate] = useState(null);
   const [routeInfo, setRouteInfo] = useState(null);
   const [eta, setEta] = useState(null);
+  const [hasAlwaysPermission, setHasAlwaysPermission] = useState(false);
   
   const messagesEndRef = useRef(null);
   const locationWatchId = useRef(null);
@@ -58,6 +205,7 @@ const CouchNavigator = () => {
   const directionsRendererRef = useRef(null);
   const routePolylineRef = useRef(null);
   const lastRenderedRouteRef = useRef(null);
+  const initialMapCenterRef = useRef(null);
 
   const [platformInfo, setPlatformInfo] = useState({
     isIOS: false,
@@ -81,12 +229,34 @@ const CouchNavigator = () => {
         setNotificationsEnabled(true);
       }
     }
+
+    // Restore state from localStorage
+    const savedCar = localStorage.getItem('selectedCar');
+    const savedLocationEnabled = localStorage.getItem('locationEnabled') === 'true';
+    const savedViewMode = localStorage.getItem('viewMode');
+    
+    if (savedCar) {
+      setSelectedCar(savedCar);
+      setCarNumber(savedCar);
+      console.log('Restored car selection:', savedCar);
+    }
+    
+    if (savedLocationEnabled && savedCar) {
+      setLocationEnabled(true);
+      console.log('Restored location enabled state - will auto-resume tracking');
+    }
+    
+    if (savedViewMode) {
+      setViewMode(savedViewMode);
+      console.log('Restored view mode:', savedViewMode);
+    }
   }, []);
 
   const mapContainerStyle = {
     width: '100%',
     height: '400px',
-    borderRadius: '12px'
+    borderRadius: '12px',
+    minHeight: '300px'
   };
 
   const mapOptions = {
@@ -101,15 +271,7 @@ const CouchNavigator = () => {
   const onMapLoad = (map) => {
     console.log('🗺️ Map loaded!');
     mapRef.current = map;
-    
-    // Set initial center and zoom only on first load
-    if (selectedCar && carLocations[selectedCar]) {
-      map.setCenter({
-        lat: carLocations[selectedCar].latitude,
-        lng: carLocations[selectedCar].longitude
-      });
-      map.setZoom(16);
-    }
+    // Don't set center/zoom here - let defaultCenter and defaultZoom handle it
   };
 
   const clearRoute = () => {
@@ -128,6 +290,12 @@ const CouchNavigator = () => {
   const renderRoute = async (pickup, dropoffs, shouldFitBounds = false) => {
     if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.DirectionsService) {
       console.log('⏭️ Cannot render route - map not ready');
+      return;
+    }
+
+    // Don't clear route if it's just an update - this prevents flickering
+    if (!shouldFitBounds && directionsRendererRef.current) {
+      console.log('⏭️ Route already exists, skipping re-render');
       return;
     }
 
@@ -189,6 +357,7 @@ const CouchNavigator = () => {
       
       // Only fit bounds on initial route load, not on updates
       if (shouldFitBounds) {
+        console.log('🎯 Fitting bounds to route');
         const bounds = new window.google.maps.LatLngBounds();
         result.routes[0].legs.forEach(leg => {
           bounds.extend(leg.start_location);
@@ -258,6 +427,26 @@ const CouchNavigator = () => {
     mapRef.current.setZoom(16);
   };
 
+  // SEPARATE: Handle route rendering independently from markers
+  useEffect(() => {
+    if (!selectedCar || activeRides.length === 0) {
+      clearRoute();
+      return;
+    }
+
+    const ride = activeRides[0];
+    if (!ride.pickup || !ride.dropoffs) return;
+
+    const routeKey = `${ride.pickup}-${ride.dropoffs.join('-')}`;
+    const isNewRoute = lastRenderedRouteRef.current !== routeKey;
+    
+    if (isNewRoute) {
+      console.log('🛣️ Rendering new route');
+      renderRoute(ride.pickup, ride.dropoffs, true);
+      lastRenderedRouteRef.current = routeKey;
+    }
+  }, [activeRides, selectedCar]);
+
   // MODIFIED: Update markers smoothly without recreating
   useEffect(() => {
     console.log('🗺️ Marker update triggered:', {
@@ -324,15 +513,7 @@ const CouchNavigator = () => {
         }
       }
 
-      if (activeRides.length > 0) {
-        const ride = activeRides[0];
-        if (ride.pickup && ride.dropoffs) {
-          const routeKey = `${ride.pickup}-${ride.dropoffs.join('-')}`;
-          const isNewRoute = lastRenderedRouteRef.current !== routeKey;
-          renderRoute(ride.pickup, ride.dropoffs, isNewRoute);
-          lastRenderedRouteRef.current = routeKey;
-        }
-      }
+      // Route rendering moved to separate useEffect
     } else if (viewMode === 'couch' && selectedCar) {
       const location = carLocations[selectedCar];
       if (location && location.latitude && location.longitude) {
@@ -379,15 +560,7 @@ const CouchNavigator = () => {
         }
       }
 
-      if (activeRides.length > 0) {
-        const ride = activeRides[0];
-        if (ride.pickup && ride.dropoffs) {
-          const routeKey = `${ride.pickup}-${ride.dropoffs.join('-')}`;
-          const isNewRoute = lastRenderedRouteRef.current !== routeKey;
-          renderRoute(ride.pickup, ride.dropoffs, isNewRoute);
-          lastRenderedRouteRef.current = routeKey;
-        }
-      }
+      // Route rendering moved to separate useEffect
     } else if (viewMode === 'couch' && !selectedCar) {
       // Clear all markers and recreate for overview
       Object.values(markersRef.current).forEach(marker => {
@@ -433,7 +606,38 @@ const CouchNavigator = () => {
     }
 
     console.log('✅ Total markers now:', Object.keys(markersRef.current).length);
-  }, [carLocations, googleMapsLoaded, selectedCar, viewMode, activeRides]);
+  }, [carLocations, googleMapsLoaded, selectedCar, viewMode]);
+
+  // Save state to localStorage when it changes
+  useEffect(() => {
+    if (selectedCar) {
+      localStorage.setItem('selectedCar', selectedCar);
+    } else {
+      localStorage.removeItem('selectedCar');
+    }
+  }, [selectedCar]);
+
+  useEffect(() => {
+    localStorage.setItem('locationEnabled', locationEnabled.toString());
+  }, [locationEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('viewMode', viewMode);
+  }, [viewMode]);
+
+  // Set initial map center only once when car location first becomes available
+  useEffect(() => {
+    if (selectedCar && carLocations[selectedCar] && !initialMapCenterRef.current) {
+      initialMapCenterRef.current = {
+        lat: carLocations[selectedCar].latitude,
+        lng: carLocations[selectedCar].longitude
+      };
+    }
+    // Reset when car changes
+    if (!selectedCar) {
+      initialMapCenterRef.current = null;
+    }
+  }, [selectedCar, carLocations]);
 
   // Calculate ETA when car location or rides update (removed auto-centering)
   useEffect(() => {
@@ -894,6 +1098,7 @@ const CouchNavigator = () => {
           await updateLocationToFirestore(positionResult);
           
           setLocationEnabled(true);
+          localStorage.setItem('locationEnabled', 'true');
           setDebugStatus('✅ Native location enabled!');
           setLocationError('');
           setTimeout(() => setDebugStatus(''), 3000);
@@ -941,6 +1146,7 @@ const CouchNavigator = () => {
       await updateLocationToFirestore(position);
 
       setLocationEnabled(true);
+      localStorage.setItem('locationEnabled', 'true');
       setDebugStatus('✅ Location enabled!');
       setLocationError('');
       setTimeout(() => setDebugStatus(''), 3000);
@@ -1001,6 +1207,7 @@ const CouchNavigator = () => {
       setLocationEnabled(false);
       setLastLocationUpdate(null);
       setEta(null);
+      localStorage.setItem('locationEnabled', 'false');
       setDebugStatus('📍 Location sharing stopped');
       setTimeout(() => setDebugStatus(''), 2000);
     } catch (error) {
@@ -1094,7 +1301,10 @@ const CouchNavigator = () => {
           
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setViewMode('couch')}
+              onClick={() => {
+                setViewMode('couch');
+                localStorage.setItem('viewMode', 'couch');
+              }}
               className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
                 viewMode === 'couch'
                   ? 'bg-[#79F200] text-gray-900'
@@ -1104,7 +1314,10 @@ const CouchNavigator = () => {
               🛋️ Couch
             </button>
             <button
-              onClick={() => setViewMode('navigator')}
+              onClick={() => {
+                setViewMode('navigator');
+                localStorage.setItem('viewMode', 'navigator');
+              }}
               className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
                 viewMode === 'navigator'
                   ? 'bg-[#79F200] text-gray-900'
@@ -1187,7 +1400,7 @@ const CouchNavigator = () => {
         {viewMode === 'navigator' ? (
           <div className="space-y-6">
             {!selectedCar ? (
-              <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+              <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                   <Car size={20} />
                   Select Your Car
@@ -1202,7 +1415,7 @@ const CouchNavigator = () => {
                       console.log('Selected car:', num);
                     }
                   }}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900 text-base"
                 >
                   <option value="">Choose your car number...</option>
                   {availableCars.map(car => (
@@ -1219,7 +1432,7 @@ const CouchNavigator = () => {
               </div>
             ) : (
               <>
-                <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4 flex items-center justify-between">
+                <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
                     <p className="font-bold text-blue-900">Connected as Car {selectedCar}</p>
                     <p className="text-sm text-blue-700">You can now send and receive messages</p>
@@ -1237,93 +1450,41 @@ const CouchNavigator = () => {
                         }
                       });
                       markersRef.current = {};
+                      initialMapCenterRef.current = null;
+                      
+                      // Clear localStorage
+                      localStorage.removeItem('selectedCar');
+                      localStorage.removeItem('locationEnabled');
+                      
                       setCarNumber('');
                       setSelectedCar(null);
                       setLocationEnabled(false);
                       setLastLocationUpdate(null);
                       setEta(null);
+                      setHasAlwaysPermission(false);
                       setDebugStatus('🔴 Disconnected');
                       setTimeout(() => setDebugStatus(''), 2000);
                     }}
-                    className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bold hover:bg-red-200"
+                    className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold hover:bg-red-200 touch-manipulation whitespace-nowrap"
                   >
                     Disconnect
                   </button>
                 </div>
 
                 {activeRides.length > 0 && (
-                  <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                  <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                     <h3 className="text-lg font-bold text-gray-900 mb-4">
                       Your Active Ride
                     </h3>
-                    {activeRides.map(ride => (
-                      <div key={ride.id} className="space-y-3">
-                        <div className="border-2 border-green-200 bg-green-50 rounded-xl p-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="font-bold text-gray-900">{ride.name}</p>
-                              <p className="text-sm text-gray-600">{ride.phone}</p>
-                              <div className="mt-2 space-y-1 text-sm">
-                                <p className="flex items-center gap-1">
-                                  <MapPin size={14} className="text-green-600" />
-                                  <span className="font-medium">Pickup:</span> {ride.pickup}
-                                </p>
-                                {ride.dropoffs?.map((dropoff, idx) => (
-                                  <p key={idx} className="flex items-center gap-1">
-                                    <MapPin size={14} className="text-red-600" />
-                                    <span className="font-medium">Drop {idx + 1}:</span> {dropoff}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
-                              {ride.status}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        {eta && (
-                          <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-xs font-semibold text-blue-800 uppercase">
-                                  ETA to {eta.destination}
-                                </p>
-                                <p className="text-2xl font-bold text-blue-900 mt-1">
-                                  {eta.eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                                <p className="text-sm text-blue-700 mt-1">
-                                  {eta.durationText} • {eta.distanceText}
-                                </p>
-                              </div>
-                              <Clock size={32} className="text-blue-600" />
-                            </div>
-                          </div>
-                        )}
-                        
-                        {routeInfo && (
-                          <div className="bg-purple-50 border border-purple-300 rounded-xl p-4">
-                            <p className="text-xs font-semibold text-purple-800 uppercase mb-2">
-                              Total Route
-                            </p>
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-lg font-bold text-purple-900">
-                                  {routeInfo.durationText}
-                                </p>
-                                <p className="text-sm text-purple-700">
-                                  {routeInfo.distanceText} total
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    <div className="space-y-3">
+                      <ActiveRideDisplay rides={activeRides} />
+                      <ETADisplay eta={eta} />
+                      <RouteInfoDisplay routeInfo={routeInfo} />
+                    </div>
                   </div>
                 )}
 
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <Navigation size={20} className="text-blue-600" />
                     Location Sharing
@@ -1331,35 +1492,20 @@ const CouchNavigator = () => {
                   
                   {!locationEnabled ? (
                     <div className="space-y-3">
-                      <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+                      <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-3 sm:p-4">
                         <p className="text-sm text-blue-900 font-medium mb-2">
                           📍 Location sharing allows the couch to track your position in real-time.
                         </p>
-                        <p className="text-xs text-blue-700">
-                          When you tap the button below, your device will ask for permission.
-                        </p>
+                        {platformInfo.isIOS && (
+                          <p className="text-xs text-blue-700 mt-2">
+                            💡 Make sure Location Services are enabled in iPhone Settings first
+                          </p>
+                        )}
                       </div>
-                      
-                      {platformInfo.isIOS && (
-                        <div className="bg-purple-50 border border-purple-300 rounded-lg p-3">
-                          <p className="text-xs text-purple-900 font-bold mb-2">
-                            🍎 IMPORTANT: Check System Settings First
-                          </p>
-                          <p className="text-xs text-purple-800 mb-2">
-                            Before clicking the button, make sure Location Services are enabled:
-                          </p>
-                          <ol className="text-xs text-purple-800 space-y-1 ml-4 list-decimal">
-                            <li><strong>iPhone Settings</strong> (gear icon)</li>
-                            <li><strong>Privacy & Security</strong></li>
-                            <li><strong>Location Services</strong></li>
-                            <li>Toggle must be <strong>ON (green)</strong></li>
-                          </ol>
-                        </div>
-                      )}
                       
                       <button
                         onClick={requestLocationPermission}
-                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2 touch-manipulation"
                       >
                         <Navigation size={20} />
                         Enable Location Sharing
@@ -1385,33 +1531,35 @@ const CouchNavigator = () => {
                         )}
                       </div>
 
-                      {platformInfo.isIOS && isNativeApp && (
-                        <div className="bg-purple-50 border border-purple-300 rounded-lg p-3">
-                          <p className="text-xs text-purple-900 font-bold mb-2">
-                            📱 Enable Background Tracking (Optional)
-                          </p>
-                          <p className="text-xs text-purple-800 mb-2">
-                            For continuous tracking when the app is in the background, enable "Always" permission.
-                          </p>
-                          <button
-                            onClick={async () => {
+                      {platformInfo.isIOS && isNativeApp && !hasAlwaysPermission && (
+                        <button
+                          onClick={async () => {
+                            try {
                               const result = await requestAlwaysLocationPermission();
-                              if (result.success) {
-                                alert('✅ Background tracking enabled!');
+                              console.log('Always permission result:', result);
+                              
+                              if (result.success || result.granted) {
+                                setHasAlwaysPermission(true);
+                                setDebugStatus('✅ Background tracking enabled!');
+                                setTimeout(() => setDebugStatus(''), 3000);
                               } else {
-                                alert('ℹ️ To enable: Settings > Carpool Internal > Location > Always');
+                                // Show instructions
+                                alert('To enable background tracking:\n\n1. Open iPhone Settings\n2. Find "Carpool Internal"\n3. Tap Location\n4. Select "Always"');
                               }
-                            }}
-                            className="w-full py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition text-sm"
-                          >
-                            Enable Background Tracking
-                          </button>
-                        </div>
+                            } catch (error) {
+                              console.error('Background permission error:', error);
+                              alert('To enable background tracking:\n\n1. Open iPhone Settings\n2. Find "Carpool Internal"\n3. Tap Location\n4. Select "Always"');
+                            }
+                          }}
+                          className="w-full py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition text-sm touch-manipulation"
+                        >
+                          Enable Background Tracking
+                        </button>
                       )}
                       
                       <button
                         onClick={stopLocationSharing}
-                        className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition flex items-center justify-center gap-2 touch-manipulation"
                       >
                         <X size={20} />
                         Stop Sharing Location
@@ -1420,30 +1568,27 @@ const CouchNavigator = () => {
                   )}
                 </div>
 
-                {googleMapsLoaded && carLocations[selectedCar] && (
-                  <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-                    <div className="flex items-center justify-between mb-4">
+                {googleMapsLoaded && carLocations[selectedCar] && initialMapCenterRef.current && (
+                  <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
                       <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                         <Navigation size={20} className="text-blue-600" />
                         Your Location{activeRides.length > 0 ? ' & Route' : ''}
                       </h3>
                       <button
                         onClick={() => centerMapOnCar(selectedCar)}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition flex items-center gap-2"
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition flex items-center gap-2 touch-manipulation whitespace-nowrap"
                       >
                         <Navigation size={16} />
                         Recenter
                       </button>
                     </div>
-                    <GoogleMap
+                    <StableMap
+                      key={`nav-map-${selectedCar}`}
+                      initialCenter={initialMapCenterRef.current}
+                      onMapLoad={onMapLoad}
+                      mapOptions={mapOptions}
                       mapContainerStyle={mapContainerStyle}
-                      defaultCenter={{
-                        lat: carLocations[selectedCar].latitude,
-                        lng: carLocations[selectedCar].longitude
-                      }}
-                      defaultZoom={16}
-                      onLoad={onMapLoad}
-                      options={mapOptions}
                     />
                     <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                       <Clock size={12} />
@@ -1452,41 +1597,17 @@ const CouchNavigator = () => {
                   </div>
                 )}
 
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <MessageSquare size={20} />
                     Messages with Couch
                   </h3>
                   
-                  <div className="h-80 overflow-y-auto mb-4 space-y-3 p-4 bg-gray-50 rounded-xl">
-                    {messages.length === 0 ? (
-                      <p className="text-center text-gray-500 py-8">No messages yet</p>
-                    ) : (
-                      messages.map(msg => (
-                        <div
-                          key={msg.id}
-                          className={`flex ${msg.sender === 'navigator' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                              msg.sender === 'navigator'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white border border-gray-200 text-gray-900'
-                            }`}
-                          >
-                            <p className="text-xs font-semibold mb-1 opacity-70">
-                              {msg.sender === 'navigator' ? 'You' : msg.senderName}
-                            </p>
-                            <p className="text-sm">{msg.message}</p>
-                            <p className="text-xs opacity-60 mt-1">
-                              {msg.timestamp?.toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
+                  <MessagesDisplay 
+                    messages={messages}
+                    messagesEndRef={messagesEndRef}
+                    viewMode={viewMode}
+                  />
 
                   <div className="flex gap-2">
                     <input
@@ -1515,14 +1636,20 @@ const CouchNavigator = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">
                 Select Car to Monitor
               </h3>
               <select
                 value={selectedCar || ''}
-                onChange={(e) => setSelectedCar(e.target.value || null)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900"
+                onChange={(e) => {
+                  const newCar = e.target.value || null;
+                  if (newCar !== selectedCar) {
+                    initialMapCenterRef.current = null;
+                  }
+                  setSelectedCar(newCar);
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900 text-base"
               >
                 <option value="">Select a car...</option>
                 {availableCars.map(car => (
@@ -1576,7 +1703,7 @@ const CouchNavigator = () => {
                   </div>
                 )}
 
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4">
                     Active Rides for Car {selectedCar}
                   </h3>
@@ -1584,93 +1711,23 @@ const CouchNavigator = () => {
                     <p className="text-gray-500 text-center py-4">No active rides</p>
                   ) : (
                     <div className="space-y-3">
-                      {activeRides.map(ride => (
-                        <div key={ride.id} className="space-y-3">
-                          <div className="border-2 border-gray-200 rounded-xl p-4">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <p className="font-bold text-gray-900">{ride.name}</p>
-                                <p className="text-sm text-gray-600">{ride.phone}</p>
-                                <div className="mt-2 space-y-1 text-sm">
-                                  <p className="flex items-center gap-1">
-                                    <MapPin size={14} className="text-green-600" />
-                                    <span className="font-medium">Pickup:</span> {ride.pickup}
-                                  </p>
-                                  {ride.dropoffs?.map((dropoff, idx) => (
-                                    <p key={idx} className="flex items-center gap-1">
-                                      <MapPin size={14} className="text-red-600" />
-                                      <span className="font-medium">Drop {idx + 1}:</span> {dropoff}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                ride.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                              }`}>
-                                {ride.status}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          {eta && carLocations[selectedCar] && (
-                            <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-xs font-semibold text-blue-800 uppercase">
-                                    Car {selectedCar} ETA to {eta.destination}
-                                  </p>
-                                  <p className="text-2xl font-bold text-blue-900 mt-1">
-                                    {eta.eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </p>
-                                  <p className="text-sm text-blue-700 mt-1">
-                                    {eta.durationText} • {eta.distanceText}
-                                  </p>
-                                </div>
-                                <Clock size={32} className="text-blue-600" />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                      <ActiveRideDisplay rides={activeRides} />
+                      {carLocations[selectedCar] && <ETADisplay eta={eta} />}
                     </div>
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                     <MessageSquare size={20} />
                     Messages with Car {selectedCar}
                   </h3>
                   
-                  <div className="h-80 overflow-y-auto mb-4 space-y-3 p-4 bg-gray-50 rounded-xl">
-                    {messages.length === 0 ? (
-                      <p className="text-center text-gray-500 py-8">No messages yet</p>
-                    ) : (
-                      messages.map(msg => (
-                        <div
-                          key={msg.id}
-                          className={`flex ${msg.sender === 'couch' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                              msg.sender === 'couch'
-                                ? 'bg-[#79F200] text-gray-900'
-                                : 'bg-white border border-gray-200 text-gray-900'
-                            }`}
-                          >
-                            <p className="text-xs font-semibold mb-1 opacity-70">
-                              {msg.sender === 'couch' ? 'You (Couch)' : msg.senderName}
-                            </p>
-                            <p className="text-sm">{msg.message}</p>
-                            <p className="text-xs opacity-60 mt-1">
-                              {msg.timestamp?.toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
+                  <MessagesDisplay 
+                    messages={messages}
+                    messagesEndRef={messagesEndRef}
+                    viewMode={viewMode}
+                  />
 
                   <div className="flex gap-2">
                     <input

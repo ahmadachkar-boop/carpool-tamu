@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		16FAB0BE2EA81C260037283F /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBC6050B9AA4FF7812A0DCA7 /* Pods_App.framework */; };
+		16FAB1182EA81CC40037283F /* Capacitor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10D2EA81CBD0037283F /* Capacitor.framework */; };
+		16FAB1192EA81CC40037283F /* Capacitor.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10D2EA81CBD0037283F /* Capacitor.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		16FAB11A2EA81CD30037283F /* CapacitorGeolocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1112EA81CBD0037283F /* CapacitorGeolocation.framework */; };
+		16FAB11B2EA81CD30037283F /* CapacitorGeolocation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1112EA81CBD0037283F /* CapacitorGeolocation.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		16FAB11C2EA81CDB0037283F /* CapacitorLocalNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1132EA81CBD0037283F /* CapacitorLocalNotifications.framework */; };
+		16FAB11D2EA81CDB0037283F /* CapacitorLocalNotifications.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1132EA81CBD0037283F /* CapacitorLocalNotifications.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		16FAB11E2EA81CE00037283F /* CapacitorPushNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1152EA81CBD0037283F /* CapacitorPushNotifications.framework */; };
+		16FAB11F2EA81CE00037283F /* CapacitorPushNotifications.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB1152EA81CBD0037283F /* CapacitorPushNotifications.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		16FAB1202EA81CE70037283F /* Cordova.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10F2EA81CBD0037283F /* Cordova.framework */; };
+		16FAB1212EA81CE70037283F /* Cordova.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10F2EA81CBD0037283F /* Cordova.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		16FAB12A2EA821110037283F /* IONGeolocationLib.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB0C22EA81CBD0037283F /* IONGeolocationLib.xcframework */; };
+		16FAB12B2EA821110037283F /* IONGeolocationLib.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB0C22EA81CBD0037283F /* IONGeolocationLib.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -14,10 +27,128 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		9FA2052EC97F27F476E8324D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBC6050B9AA4FF7812A0DCA7 /* Pods_App.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		16FAB10C2EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 44D6062E8C618EC2B8F1D7229E8AD501;
+			remoteInfo = Capacitor;
+		};
+		16FAB10E2EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 1ABFDA3391AEBA42EFB0FEBF824A6E34;
+			remoteInfo = CapacitorCordova;
+		};
+		16FAB1102EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 26969F9EEC9F4DDCD493EF0884E1EDEC;
+			remoteInfo = CapacitorGeolocation;
+		};
+		16FAB1122EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 70E052060A1D7DF2CCC7B1124232A9F7;
+			remoteInfo = CapacitorLocalNotifications;
+		};
+		16FAB1142EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = A9C1AE5EF2DE4871B3A49E5726100845;
+			remoteInfo = CapacitorPushNotifications;
+		};
+		16FAB1162EA81CBD0037283F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 5BEF4602752E47C46E8C10FB8B4B57F2;
+			remoteInfo = "Pods-App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		16FAB0C02EA81C260037283F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				16FAB11D2EA81CDB0037283F /* CapacitorLocalNotifications.framework in Embed Frameworks */,
+				16FAB11F2EA81CE00037283F /* CapacitorPushNotifications.framework in Embed Frameworks */,
+				16FAB1212EA81CE70037283F /* Cordova.framework in Embed Frameworks */,
+				16FAB12B2EA821110037283F /* IONGeolocationLib.xcframework in Embed Frameworks */,
+				16FAB11B2EA81CD30037283F /* CapacitorGeolocation.framework in Embed Frameworks */,
+				16FAB1192EA81CC40037283F /* Capacitor.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		16FAB0B82EA81BA10037283F /* Capacitor.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = Capacitor.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		16FAB0C22EA81CBD0037283F /* IONGeolocationLib.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = IONGeolocationLib.xcframework; sourceTree = "<group>"; };
+		16FAB0C32EA81CBD0037283F /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		16FAB0C52EA81CBD0037283F /* Capacitor.podspec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Capacitor.podspec.json; sourceTree = "<group>"; };
+		16FAB0C62EA81CBD0037283F /* CapacitorCordova.podspec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = CapacitorCordova.podspec.json; sourceTree = "<group>"; };
+		16FAB0C72EA81CBD0037283F /* CapacitorGeolocation.podspec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = CapacitorGeolocation.podspec.json; sourceTree = "<group>"; };
+		16FAB0C82EA81CBD0037283F /* CapacitorLocalNotifications.podspec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = CapacitorLocalNotifications.podspec.json; sourceTree = "<group>"; };
+		16FAB0C92EA81CBD0037283F /* CapacitorPushNotifications.podspec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = CapacitorPushNotifications.podspec.json; sourceTree = "<group>"; };
+		16FAB0CB2EA81CBD0037283F /* Capacitor.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = Capacitor.modulemap; sourceTree = "<group>"; };
+		16FAB0CC2EA81CBD0037283F /* Capacitor-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "Capacitor-dummy.m"; sourceTree = "<group>"; };
+		16FAB0CD2EA81CBD0037283F /* Capacitor-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Capacitor-Info.plist"; sourceTree = "<group>"; };
+		16FAB0CE2EA81CBD0037283F /* Capacitor-prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Capacitor-prefix.pch"; sourceTree = "<group>"; };
+		16FAB0CF2EA81CBD0037283F /* Capacitor.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Capacitor.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0D02EA81CBD0037283F /* Capacitor.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Capacitor.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0D22EA81CBD0037283F /* CapacitorCordova.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = CapacitorCordova.modulemap; sourceTree = "<group>"; };
+		16FAB0D32EA81CBD0037283F /* CapacitorCordova-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "CapacitorCordova-dummy.m"; sourceTree = "<group>"; };
+		16FAB0D42EA81CBD0037283F /* CapacitorCordova-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CapacitorCordova-Info.plist"; sourceTree = "<group>"; };
+		16FAB0D52EA81CBD0037283F /* CapacitorCordova-prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorCordova-prefix.pch"; sourceTree = "<group>"; };
+		16FAB0D62EA81CBD0037283F /* CapacitorCordova.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorCordova.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0D72EA81CBD0037283F /* CapacitorCordova.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorCordova.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0D92EA81CBD0037283F /* CapacitorGeolocation.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = CapacitorGeolocation.modulemap; sourceTree = "<group>"; };
+		16FAB0DA2EA81CBD0037283F /* CapacitorGeolocation-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "CapacitorGeolocation-dummy.m"; sourceTree = "<group>"; };
+		16FAB0DB2EA81CBD0037283F /* CapacitorGeolocation-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CapacitorGeolocation-Info.plist"; sourceTree = "<group>"; };
+		16FAB0DC2EA81CBD0037283F /* CapacitorGeolocation-prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorGeolocation-prefix.pch"; sourceTree = "<group>"; };
+		16FAB0DD2EA81CBD0037283F /* CapacitorGeolocation-umbrella.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorGeolocation-umbrella.h"; sourceTree = "<group>"; };
+		16FAB0DE2EA81CBD0037283F /* CapacitorGeolocation.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorGeolocation.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0DF2EA81CBD0037283F /* CapacitorGeolocation.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorGeolocation.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0E12EA81CBD0037283F /* CapacitorLocalNotifications.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = CapacitorLocalNotifications.modulemap; sourceTree = "<group>"; };
+		16FAB0E22EA81CBD0037283F /* CapacitorLocalNotifications-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "CapacitorLocalNotifications-dummy.m"; sourceTree = "<group>"; };
+		16FAB0E32EA81CBD0037283F /* CapacitorLocalNotifications-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CapacitorLocalNotifications-Info.plist"; sourceTree = "<group>"; };
+		16FAB0E42EA81CBD0037283F /* CapacitorLocalNotifications-prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorLocalNotifications-prefix.pch"; sourceTree = "<group>"; };
+		16FAB0E52EA81CBD0037283F /* CapacitorLocalNotifications-umbrella.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorLocalNotifications-umbrella.h"; sourceTree = "<group>"; };
+		16FAB0E62EA81CBD0037283F /* CapacitorLocalNotifications.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorLocalNotifications.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0E72EA81CBD0037283F /* CapacitorLocalNotifications.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorLocalNotifications.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0E92EA81CBD0037283F /* CapacitorPushNotifications.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = CapacitorPushNotifications.modulemap; sourceTree = "<group>"; };
+		16FAB0EA2EA81CBD0037283F /* CapacitorPushNotifications-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "CapacitorPushNotifications-dummy.m"; sourceTree = "<group>"; };
+		16FAB0EB2EA81CBD0037283F /* CapacitorPushNotifications-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CapacitorPushNotifications-Info.plist"; sourceTree = "<group>"; };
+		16FAB0EC2EA81CBD0037283F /* CapacitorPushNotifications-prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorPushNotifications-prefix.pch"; sourceTree = "<group>"; };
+		16FAB0ED2EA81CBD0037283F /* CapacitorPushNotifications-umbrella.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CapacitorPushNotifications-umbrella.h"; sourceTree = "<group>"; };
+		16FAB0EE2EA81CBD0037283F /* CapacitorPushNotifications.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorPushNotifications.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0EF2EA81CBD0037283F /* CapacitorPushNotifications.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CapacitorPushNotifications.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0F12EA81CBD0037283F /* IONGeolocationLib-xcframeworks.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "IONGeolocationLib-xcframeworks.sh"; sourceTree = "<group>"; };
+		16FAB0F22EA81CBD0037283F /* IONGeolocationLib.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = IONGeolocationLib.debug.xcconfig; sourceTree = "<group>"; };
+		16FAB0F32EA81CBD0037283F /* IONGeolocationLib.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = IONGeolocationLib.release.xcconfig; sourceTree = "<group>"; };
+		16FAB0F52EA81CBD0037283F /* Pods-App.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = "Pods-App.modulemap"; sourceTree = "<group>"; };
+		16FAB0F62EA81CBD0037283F /* Pods-App-acknowledgements.markdown */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "Pods-App-acknowledgements.markdown"; sourceTree = "<group>"; };
+		16FAB0F72EA81CBD0037283F /* Pods-App-acknowledgements.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Pods-App-acknowledgements.plist"; sourceTree = "<group>"; };
+		16FAB0F82EA81CBD0037283F /* Pods-App-dummy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "Pods-App-dummy.m"; sourceTree = "<group>"; };
+		16FAB0F92EA81CBD0037283F /* Pods-App-frameworks.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Pods-App-frameworks.sh"; sourceTree = "<group>"; };
+		16FAB0FA2EA81CBD0037283F /* Pods-App-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Pods-App-Info.plist"; sourceTree = "<group>"; };
+		16FAB0FB2EA81CBD0037283F /* Pods-App-umbrella.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Pods-App-umbrella.h"; sourceTree = "<group>"; };
+		16FAB0FC2EA81CBD0037283F /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
+		16FAB0FD2EA81CBD0037283F /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Pods-App.release.xcconfig"; sourceTree = "<group>"; };
+		16FAB1002EA81CBD0037283F /* Manifest.lock */ = {isa = PBXFileReference; lastKnownFileType = text; path = Manifest.lock; sourceTree = "<group>"; };
+		16FAB1012EA81CBD0037283F /* Pods.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Pods.xcodeproj; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -37,13 +168,181 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9FA2052EC97F27F476E8324D /* Pods_App.framework in Frameworks */,
+				16FAB11C2EA81CDB0037283F /* CapacitorLocalNotifications.framework in Frameworks */,
+				16FAB11E2EA81CE00037283F /* CapacitorPushNotifications.framework in Frameworks */,
+				16FAB0BE2EA81C260037283F /* Pods_App.framework in Frameworks */,
+				16FAB1202EA81CE70037283F /* Cordova.framework in Frameworks */,
+				16FAB12A2EA821110037283F /* IONGeolocationLib.xcframework in Frameworks */,
+				16FAB11A2EA81CD30037283F /* CapacitorGeolocation.framework in Frameworks */,
+				16FAB1182EA81CC40037283F /* Capacitor.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		16FAB0C12EA81CBD0037283F /* Headers */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Headers;
+			sourceTree = "<group>";
+		};
+		16FAB0C42EA81CBD0037283F /* IONGeolocationLib */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0C22EA81CBD0037283F /* IONGeolocationLib.xcframework */,
+				16FAB0C32EA81CBD0037283F /* LICENSE */,
+			);
+			path = IONGeolocationLib;
+			sourceTree = "<group>";
+		};
+		16FAB0CA2EA81CBD0037283F /* Local Podspecs */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0C52EA81CBD0037283F /* Capacitor.podspec.json */,
+				16FAB0C62EA81CBD0037283F /* CapacitorCordova.podspec.json */,
+				16FAB0C72EA81CBD0037283F /* CapacitorGeolocation.podspec.json */,
+				16FAB0C82EA81CBD0037283F /* CapacitorLocalNotifications.podspec.json */,
+				16FAB0C92EA81CBD0037283F /* CapacitorPushNotifications.podspec.json */,
+			);
+			path = "Local Podspecs";
+			sourceTree = "<group>";
+		};
+		16FAB0D12EA81CBD0037283F /* Capacitor */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0CB2EA81CBD0037283F /* Capacitor.modulemap */,
+				16FAB0CC2EA81CBD0037283F /* Capacitor-dummy.m */,
+				16FAB0CD2EA81CBD0037283F /* Capacitor-Info.plist */,
+				16FAB0CE2EA81CBD0037283F /* Capacitor-prefix.pch */,
+				16FAB0CF2EA81CBD0037283F /* Capacitor.debug.xcconfig */,
+				16FAB0D02EA81CBD0037283F /* Capacitor.release.xcconfig */,
+			);
+			path = Capacitor;
+			sourceTree = "<group>";
+		};
+		16FAB0D82EA81CBD0037283F /* CapacitorCordova */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0D22EA81CBD0037283F /* CapacitorCordova.modulemap */,
+				16FAB0D32EA81CBD0037283F /* CapacitorCordova-dummy.m */,
+				16FAB0D42EA81CBD0037283F /* CapacitorCordova-Info.plist */,
+				16FAB0D52EA81CBD0037283F /* CapacitorCordova-prefix.pch */,
+				16FAB0D62EA81CBD0037283F /* CapacitorCordova.debug.xcconfig */,
+				16FAB0D72EA81CBD0037283F /* CapacitorCordova.release.xcconfig */,
+			);
+			path = CapacitorCordova;
+			sourceTree = "<group>";
+		};
+		16FAB0E02EA81CBD0037283F /* CapacitorGeolocation */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0D92EA81CBD0037283F /* CapacitorGeolocation.modulemap */,
+				16FAB0DA2EA81CBD0037283F /* CapacitorGeolocation-dummy.m */,
+				16FAB0DB2EA81CBD0037283F /* CapacitorGeolocation-Info.plist */,
+				16FAB0DC2EA81CBD0037283F /* CapacitorGeolocation-prefix.pch */,
+				16FAB0DD2EA81CBD0037283F /* CapacitorGeolocation-umbrella.h */,
+				16FAB0DE2EA81CBD0037283F /* CapacitorGeolocation.debug.xcconfig */,
+				16FAB0DF2EA81CBD0037283F /* CapacitorGeolocation.release.xcconfig */,
+			);
+			path = CapacitorGeolocation;
+			sourceTree = "<group>";
+		};
+		16FAB0E82EA81CBD0037283F /* CapacitorLocalNotifications */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0E12EA81CBD0037283F /* CapacitorLocalNotifications.modulemap */,
+				16FAB0E22EA81CBD0037283F /* CapacitorLocalNotifications-dummy.m */,
+				16FAB0E32EA81CBD0037283F /* CapacitorLocalNotifications-Info.plist */,
+				16FAB0E42EA81CBD0037283F /* CapacitorLocalNotifications-prefix.pch */,
+				16FAB0E52EA81CBD0037283F /* CapacitorLocalNotifications-umbrella.h */,
+				16FAB0E62EA81CBD0037283F /* CapacitorLocalNotifications.debug.xcconfig */,
+				16FAB0E72EA81CBD0037283F /* CapacitorLocalNotifications.release.xcconfig */,
+			);
+			path = CapacitorLocalNotifications;
+			sourceTree = "<group>";
+		};
+		16FAB0F02EA81CBD0037283F /* CapacitorPushNotifications */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0E92EA81CBD0037283F /* CapacitorPushNotifications.modulemap */,
+				16FAB0EA2EA81CBD0037283F /* CapacitorPushNotifications-dummy.m */,
+				16FAB0EB2EA81CBD0037283F /* CapacitorPushNotifications-Info.plist */,
+				16FAB0EC2EA81CBD0037283F /* CapacitorPushNotifications-prefix.pch */,
+				16FAB0ED2EA81CBD0037283F /* CapacitorPushNotifications-umbrella.h */,
+				16FAB0EE2EA81CBD0037283F /* CapacitorPushNotifications.debug.xcconfig */,
+				16FAB0EF2EA81CBD0037283F /* CapacitorPushNotifications.release.xcconfig */,
+			);
+			path = CapacitorPushNotifications;
+			sourceTree = "<group>";
+		};
+		16FAB0F42EA81CBD0037283F /* IONGeolocationLib */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0F12EA81CBD0037283F /* IONGeolocationLib-xcframeworks.sh */,
+				16FAB0F22EA81CBD0037283F /* IONGeolocationLib.debug.xcconfig */,
+				16FAB0F32EA81CBD0037283F /* IONGeolocationLib.release.xcconfig */,
+			);
+			path = IONGeolocationLib;
+			sourceTree = "<group>";
+		};
+		16FAB0FE2EA81CBD0037283F /* Pods-App */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0F52EA81CBD0037283F /* Pods-App.modulemap */,
+				16FAB0F62EA81CBD0037283F /* Pods-App-acknowledgements.markdown */,
+				16FAB0F72EA81CBD0037283F /* Pods-App-acknowledgements.plist */,
+				16FAB0F82EA81CBD0037283F /* Pods-App-dummy.m */,
+				16FAB0F92EA81CBD0037283F /* Pods-App-frameworks.sh */,
+				16FAB0FA2EA81CBD0037283F /* Pods-App-Info.plist */,
+				16FAB0FB2EA81CBD0037283F /* Pods-App-umbrella.h */,
+				16FAB0FC2EA81CBD0037283F /* Pods-App.debug.xcconfig */,
+				16FAB0FD2EA81CBD0037283F /* Pods-App.release.xcconfig */,
+			);
+			path = "Pods-App";
+			sourceTree = "<group>";
+		};
+		16FAB0FF2EA81CBD0037283F /* Target Support Files */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0D12EA81CBD0037283F /* Capacitor */,
+				16FAB0D82EA81CBD0037283F /* CapacitorCordova */,
+				16FAB0E02EA81CBD0037283F /* CapacitorGeolocation */,
+				16FAB0E82EA81CBD0037283F /* CapacitorLocalNotifications */,
+				16FAB0F02EA81CBD0037283F /* CapacitorPushNotifications */,
+				16FAB0F42EA81CBD0037283F /* IONGeolocationLib */,
+				16FAB0FE2EA81CBD0037283F /* Pods-App */,
+			);
+			path = "Target Support Files";
+			sourceTree = "<group>";
+		};
+		16FAB1022EA81CBD0037283F /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB0C12EA81CBD0037283F /* Headers */,
+				16FAB0C42EA81CBD0037283F /* IONGeolocationLib */,
+				16FAB0CA2EA81CBD0037283F /* Local Podspecs */,
+				16FAB0FF2EA81CBD0037283F /* Target Support Files */,
+				16FAB1002EA81CBD0037283F /* Manifest.lock */,
+				16FAB1012EA81CBD0037283F /* Pods.xcodeproj */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		16FAB1032EA81CBD0037283F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				16FAB10D2EA81CBD0037283F /* Capacitor.framework */,
+				16FAB10F2EA81CBD0037283F /* Cordova.framework */,
+				16FAB1112EA81CBD0037283F /* CapacitorGeolocation.framework */,
+				16FAB1132EA81CBD0037283F /* CapacitorLocalNotifications.framework */,
+				16FAB1152EA81CBD0037283F /* CapacitorPushNotifications.framework */,
+				16FAB1172EA81CBD0037283F /* Pods_App.framework */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		4A3CDDDA47AC1B0B27AF6D7F /* Pods */ = {
 			isa = PBXGroup;
 			children = (
@@ -89,6 +388,8 @@
 		84E57EC412A80A00956E5CD4 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				16FAB1022EA81CBD0037283F /* Pods */,
+				16FAB0B82EA81BA10037283F /* Capacitor.framework */,
 				DBC6050B9AA4FF7812A0DCA7 /* Pods_App.framework */,
 			);
 			name = Frameworks;
@@ -105,7 +406,7 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
-				384D4072AAFC74167AB3DA0E /* [CP] Embed Pods Frameworks */,
+				16FAB0C02EA81C260037283F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -144,12 +445,63 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = 16FAB1032EA81CBD0037283F /* Products */;
+					ProjectRef = 16FAB1012EA81CBD0037283F /* Pods.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		16FAB10D2EA81CBD0037283F /* Capacitor.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Capacitor.framework;
+			remoteRef = 16FAB10C2EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		16FAB10F2EA81CBD0037283F /* Cordova.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Cordova.framework;
+			remoteRef = 16FAB10E2EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		16FAB1112EA81CBD0037283F /* CapacitorGeolocation.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = CapacitorGeolocation.framework;
+			remoteRef = 16FAB1102EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		16FAB1132EA81CBD0037283F /* CapacitorLocalNotifications.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = CapacitorLocalNotifications.framework;
+			remoteRef = 16FAB1122EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		16FAB1152EA81CBD0037283F /* CapacitorPushNotifications.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = CapacitorPushNotifications.framework;
+			remoteRef = 16FAB1142EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		16FAB1172EA81CBD0037283F /* Pods_App.framework */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.framework;
+			path = Pods_App.framework;
+			remoteRef = 16FAB1162EA81CBD0037283F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		504EC3021FED79650016851F /* Resources */ = {
@@ -189,23 +541,6 @@
 			shellPath = /bin/sh;
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
-		};
-		384D4072AAFC74167AB3DA0E /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 12;
-			files = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/`${PODS_ROOT}/Target Support Files/Pods-App/Pods-App-frameworks.sh`",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Capacitor.framework",
-				"$(DERIVED_FILE_DIR)/${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/CapacitorCordova.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\nset -u\nset -o pipefail\n\n/bin/bash \"${PODS_ROOT}/Target Support Files/Pods-App/Pods-App-frameworks.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -362,7 +697,8 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 8BAF324D5F5B8B8A42727A46 /* Pods-App.debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -387,7 +723,8 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F37F0B13C710EB220CC2CDDA /* Pods-App.release.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;

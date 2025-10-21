@@ -19,8 +19,8 @@ const createEmailTransporter = () => {
 
 // Function to generate a random temporary password
 const generateTempPassword = () => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let password = '';
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  let password = "";
   for (let i = 0; i < 10; i++) {
     password += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -32,12 +32,12 @@ exports.sendRequestConfirmation = onDocumentCreated(
     "emailApprovals/{approvalId}",
     async (event) => {
       console.log("=== REQUEST CONFIRMATION TRIGGERED ===");
-      
+
       try {
         const data = event.data.data();
-        
+
         // Only send confirmation for pending requests
-        if (data.status !== 'pending') {
+        if (data.status !== "pending") {
           console.log("Not a pending request, skipping confirmation email");
           return null;
         }
@@ -126,7 +126,7 @@ exports.createAccountOnApproval = onDocumentUpdated(
     "emailApprovals/{approvalId}",
     async (event) => {
       console.log("=== APPROVAL FUNCTION TRIGGERED ===");
-      
+
       try {
         const newData = event.data.after.data();
         const oldData = event.data.before.data();
@@ -157,7 +157,7 @@ exports.handlePreApproval = onDocumentCreated(
     "emailApprovals/{approvalId}",
     async (event) => {
       console.log("=== PRE-APPROVAL CHECK TRIGGERED ===");
-      
+
       try {
         const data = event.data.data();
 
@@ -196,7 +196,7 @@ async function createAccountAndSendEmail(data) {
   const email = data.email;
   const name = data.name;
   const gender = data.gender || "Not specified";
-  
+
   // Generate temporary password
   const tempPassword = generateTempPassword();
   console.log("Generated temporary password");
