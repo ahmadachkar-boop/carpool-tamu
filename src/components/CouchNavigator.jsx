@@ -1,3 +1,10 @@
+import { 
+  isNativeApp, 
+  requestNativeLocationPermission, 
+  getNativePosition, 
+  watchNativePosition,
+  clearNativeWatch 
+} from '../capacitorUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, orderBy, updateDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
@@ -493,80 +500,117 @@ const CouchNavigator = () => {
   };
 
   // Location tracking for navigator - FIXED for iOS PWA
-  useEffect(() => {
-    if (viewMode !== 'navigator' || !selectedCar || !locationEnabled || !activeNDR) {
-      if (locationUpdateTimerRef.current) {
-        clearInterval(locationUpdateTimerRef.current);
-        locationUpdateTimerRef.current = null;
-      }
-      if (locationWatchId.current) {
+  // Location tracking for navigator - NATIVE & WEB support
+useEffect(() => {
+  if (viewMode !== 'navigator' || !selectedCar || !locationEnabled || !activeNDR) {
+    if (locationUpdateTimerRef.current) {
+      clearInterval(locationUpdateTimerRef.current);
+      locationUpdateTimerRef.current = null;
+    }
+    if (locationWatchId.current) {
+      if (isNativeApp) {
+        clearNativeWatch(locationWatchId.current);
+      } else {
         navigator.geolocation.clearWatch(locationWatchId.current);
+      }
+      locationWatchId.current = null;
+    }
+    return;
+  }
+
+  console.log('🚗 Starting location tracking for car:', selectedCar);
+
+  // ✅ USE NATIVE API IF AVAILABLE
+  if (isNativeApp) {
+    console.log('🔵 Using NATIVE background location tracking');
+    
+    const startNativeWatch = async () => {
+      const watchId = await watchNativePosition(
+        (position) => {
+          console.log('✅ NATIVE location update:', position.coords);
+          updateLocationToFirestore(position);
+        },
+        (error) => {
+          console.error('❌ NATIVE watch error:', error);
+        }
+      );
+      
+      locationWatchId.current = watchId;
+    };
+    
+    startNativeWatch();
+    
+    return () => {
+      console.log('🔴 Cleaning up NATIVE location tracking');
+      if (locationWatchId.current) {
+        clearNativeWatch(locationWatchId.current);
         locationWatchId.current = null;
       }
+    };
+  }
+
+  // ⚠️ FALLBACK TO WEB API
+  console.log('🌐 Using WEB location tracking (fallback)');
+
+  const handleError = (error) => {
+    console.error('❌ watchPosition error:', error.code, error.message);
+    
+    if (error.code === 2) {
+      console.warn('⚠️ Position temporarily unavailable, will retry...');
       return;
     }
+    
+    if (error.code === 3) {
+      console.warn('⚠️ Location timeout, will retry...');
+      return;
+    }
+    
+    if (error.code === 1) {
+      setLocationError('❌ Location permission was revoked');
+      setLocationEnabled(false);
+    }
+  };
 
-    console.log('🚗 Starting location tracking for car:', selectedCar);
+  const watchOptions = {
+    enableHighAccuracy: false,
+    timeout: 30000,
+    maximumAge: 5000
+  };
 
-    const handleError = (error) => {
-      console.error('❌ watchPosition error:', error.code, error.message);
-      
-      if (error.code === 2) {
-        console.warn('⚠️ Position temporarily unavailable, will retry...');
-        return;
-      }
-      
-      if (error.code === 3) {
-        console.warn('⚠️ Location timeout, will retry...');
-        return;
-      }
-      
-      if (error.code === 1) {
-        setLocationError('❌ Location permission was revoked');
-        setLocationEnabled(false);
-      }
-    };
+  console.log('📍 Starting watchPosition with options:', watchOptions);
 
-    const watchOptions = {
-      enableHighAccuracy: false,
-      timeout: 30000,
-      maximumAge: 5000
-    };
+  locationWatchId.current = navigator.geolocation.watchPosition(
+    (position) => {
+      console.log('✅ WEB location update:', position.coords.latitude, position.coords.longitude);
+      updateLocationToFirestore(position);
+    },
+    handleError,
+    watchOptions
+  );
 
-    console.log('📍 Starting watchPosition with options:', watchOptions);
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      console.log('📱 App backgrounded');
+    } else {
+      console.log('📱 App foregrounded');
+    }
+  };
 
-    locationWatchId.current = navigator.geolocation.watchPosition(
-      (position) => {
-        console.log('✅ Location update received:', position.coords.latitude, position.coords.longitude);
-        updateLocationToFirestore(position);
-      },
-      handleError,
-      watchOptions
-    );
+  document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        console.log('📱 App backgrounded');
-      } else {
-        console.log('📱 App foregrounded');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      console.log('🔴 Cleaning up location tracking');
-      if (locationWatchId.current) {
-        navigator.geolocation.clearWatch(locationWatchId.current);
-        locationWatchId.current = null;
-      }
-      if (locationUpdateTimerRef.current) {
-        clearInterval(locationUpdateTimerRef.current);
-        locationUpdateTimerRef.current = null;
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [viewMode, selectedCar, locationEnabled, activeNDR]);
+  return () => {
+    console.log('🔴 Cleaning up WEB location tracking');
+    if (locationWatchId.current) {
+      navigator.geolocation.clearWatch(locationWatchId.current);
+      locationWatchId.current = null;
+    }
+    if (locationUpdateTimerRef.current) {
+      clearInterval(locationUpdateTimerRef.current);
+      locationUpdateTimerRef.current = null;
+    }
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+}, [viewMode, selectedCar, locationEnabled, activeNDR]);
 
   // Check if location permission is already granted/denied
   const checkLocationPermission = async () => {
@@ -583,91 +627,119 @@ const CouchNavigator = () => {
     return 'prompt';
   };
 
-  const requestLocationPermission = async () => {
-    if (!navigator.geolocation) {
-      setLocationError('❌ Geolocation is not supported by your device');
-      return;
-    }
+ const requestLocationPermission = async () => {
+  if (!navigator.geolocation) {
+    setLocationError('❌ Geolocation is not supported by your device');
+    return;
+  }
 
-    setLocationError('');
-    setDebugStatus('📍 Checking permission...');
+  setLocationError('');
+  setDebugStatus('📍 Checking permission...');
+  
+  // ✅ USE NATIVE API IF AVAILABLE
+  if (isNativeApp) {
+    console.log('🔵 Using NATIVE location API');
     
-    const permissionState = await checkLocationPermission();
-    console.log('Current permission state:', permissionState);
+    const permissionResult = await requestNativeLocationPermission();
     
-    if (permissionState === 'denied') {
-      let errorMessage = '⚠️ Location access is blocked. ';
-      if (platformInfo.isIOS) {
-        if (platformInfo.isPWA) {
-          errorMessage += '\n\n📱 To enable:\n1. Go to iPhone Settings\n2. Scroll down and find this app\n3. Tap Location\n4. Select "While Using"';
-        } else {
-          errorMessage += '\n\n🌐 To enable:\n1. Go to iPhone Settings\n2. Safari → Location\n3. Select "Ask" or "Allow"';
-        }
-      }
-      setLocationError(errorMessage);
-      setDebugStatus('❌ Permission blocked');
-      return;
-    }
-
-    setDebugStatus('📍 Requesting location...');
-    console.log('🔔 Requesting geolocation - popup should appear!');
-    
-    const tryGetLocation = (highAccuracy, attempt = 1) => {
-      return new Promise((resolve, reject) => {
-        console.log(`Attempt ${attempt} with highAccuracy: ${highAccuracy}`);
-        
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            console.log('✅ Location obtained!', position);
-            resolve(position);
-          },
-          (error) => {
-            console.error(`❌ Attempt ${attempt} failed:`, error);
-            reject(error);
-          },
-          {
-            enableHighAccuracy: highAccuracy,
-            timeout: attempt === 1 ? 15000 : 30000,
-            maximumAge: 0
-          }
-        );
-      });
-    };
-
-    try {
-      // Attempt 1: High accuracy
-      const position = await tryGetLocation(true, 1);
-      console.log('✅ Location permission granted!', position);
+    if (permissionResult.success) {
+      const positionResult = await getNativePosition();
       
-      // CRITICAL FIX: Write initial location to Firestore immediately
+      if (positionResult.success) {
+        console.log('✅ Native location obtained!', positionResult.coords);
+        
+        // Write initial location
+        await updateLocationToFirestore(positionResult);
+        
+        setLocationEnabled(true);
+        setDebugStatus('✅ Native location enabled!');
+        setLocationError('');
+        setTimeout(() => setDebugStatus(''), 3000);
+        return;
+      }
+    }
+    
+    setLocationError('❌ Failed to get native location permission');
+    setDebugStatus('❌ Permission failed');
+    return;
+  }
+  
+  // ⚠️ FALLBACK TO WEB API (for browser testing)
+  console.log('🌐 Using WEB location API (fallback)');
+  
+  const permissionState = await checkLocationPermission();
+  console.log('Current permission state:', permissionState);
+  
+  if (permissionState === 'denied') {
+    let errorMessage = '⚠️ Location access is blocked. ';
+    if (platformInfo.isIOS) {
+      if (platformInfo.isPWA) {
+        errorMessage += '\n\n📱 To enable:\n1. Go to iPhone Settings\n2. Scroll down and find this app\n3. Tap Location\n4. Select "While Using"';
+      } else {
+        errorMessage += '\n\n🌐 To enable:\n1. Go to iPhone Settings\n2. Safari → Location\n3. Select "Ask" or "Allow"';
+      }
+    }
+    setLocationError(errorMessage);
+    setDebugStatus('❌ Permission blocked');
+    return;
+  }
+
+  setDebugStatus('📍 Requesting location...');
+  console.log('🔔 Requesting geolocation - popup should appear!');
+  
+  const tryGetLocation = (highAccuracy, attempt = 1) => {
+    return new Promise((resolve, reject) => {
+      console.log(`Attempt ${attempt} with highAccuracy: ${highAccuracy}`);
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          console.log('✅ Location obtained!', position);
+          resolve(position);
+        },
+        (error) => {
+          console.error(`❌ Attempt ${attempt} failed:`, error);
+          reject(error);
+        },
+        {
+          enableHighAccuracy: highAccuracy,
+          timeout: attempt === 1 ? 15000 : 30000,
+          maximumAge: 0
+        }
+      );
+    });
+  };
+
+  try {
+    const position = await tryGetLocation(true, 1);
+    console.log('✅ Location permission granted!', position);
+    
+    await updateLocationToFirestore(position);
+    
+    setLocationEnabled(true);
+    setDebugStatus('✅ Location enabled!');
+    setLocationError('');
+    setTimeout(() => setDebugStatus(''), 3000);
+    
+  } catch (error1) {
+    console.error('❌ High accuracy failed, trying low accuracy...', error1);
+    
+    try {
+      const position = await tryGetLocation(false, 2);
+      console.log('✅ Location obtained with low accuracy!', position);
+      
       await updateLocationToFirestore(position);
       
       setLocationEnabled(true);
-      setDebugStatus('✅ Location enabled!');
-      setLocationError('');
-      setTimeout(() => setDebugStatus(''), 3000);
+      setDebugStatus('✅ Location enabled (low accuracy)');
+      setLocationError('⚠️ Using WiFi/cell tower location (less accurate). For better accuracy, go outside or near a window.');
+      setTimeout(() => setLocationError(''), 8000);
       
-    } catch (error1) {
-      console.error('❌ High accuracy failed, trying low accuracy...', error1);
-      
-      try {
-        const position = await tryGetLocation(false, 2);
-        console.log('✅ Location obtained with low accuracy!', position);
-        
-        // CRITICAL FIX: Write initial location to Firestore immediately
-        await updateLocationToFirestore(position);
-        
-        setLocationEnabled(true);
-        setDebugStatus('✅ Location enabled (low accuracy)');
-        setLocationError('⚠️ Using WiFi/cell tower location (less accurate). For better accuracy, go outside or near a window.');
-        setTimeout(() => setLocationError(''), 8000);
-        
-      } catch (error2) {
-        console.error('❌ Both attempts failed:', error2);
-        handleLocationError(error2);
-      }
+    } catch (error2) {
+      console.error('❌ Both attempts failed:', error2);
+      handleLocationError(error2);
     }
-  };
+  }
+};
 
   const handleLocationError = (error) => {
     console.error('Location error code:', error.code);
