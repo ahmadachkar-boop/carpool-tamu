@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, orderBy, updateDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
 import { useAuth } from '../AuthContext';
-import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff } from 'lucide-react';
+import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff, X } from 'lucide-react';
 import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 
@@ -26,6 +26,7 @@ const CouchNavigator = () => {
   const [updateInterval, setUpdateInterval] = useState(5000);
   const [debugStatus, setDebugStatus] = useState('');
   const [showDebug, setShowDebug] = useState(false);
+  const [lastLocationUpdate, setLastLocationUpdate] = useState(null);
   const messagesEndRef = useRef(null);
   const locationWatchId = useRef(null);
   const mapRef = useRef(null);
@@ -76,75 +77,79 @@ const CouchNavigator = () => {
       const audioContext = notificationAudioRef.current;
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      
+
       oscillator.frequency.value = 800;
       oscillator.type = 'sine';
-      
+
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-      
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
       oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.3);
+      oscillator.stop(audioContext.currentTime + 0.5);
     } catch (error) {
       console.error('Error playing notification sound:', error);
     }
   };
 
-  // Map configuration
   const mapContainerStyle = {
     width: '100%',
-    height: '400px'
+    height: '400px',
+    borderRadius: '12px'
   };
 
-  const bcsCenter = {
-    lat: 30.6280,
-    lng: -96.3344
-  };
-
-  // Map options with mapId for Advanced Markers
   const mapOptions = {
-    mapId: 'COUCH_NAVIGATOR_MAP',
     disableDefaultUI: false,
     zoomControl: true,
     mapTypeControl: false,
     streetViewControl: false,
-    fullscreenControl: true,
+    fullscreenControl: true
   };
 
-  // Handle map load
   const onMapLoad = (map) => {
     mapRef.current = map;
   };
 
-  // Update markers when car locations change
+  // Update markers when car locations change - FIXED to use standard Marker
   useEffect(() => {
-    if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.marker) return;
+    if (!mapRef.current || !googleMapsLoaded) return;
 
-    const { AdvancedMarkerElement } = window.google.maps.marker;
-
-    // Clean up old markers
+    // Clear existing markers
     Object.values(markersRef.current).forEach(marker => {
-      if (marker && marker.map) {
-        marker.map = null;
+      if (marker && marker.setMap) {
+        marker.setMap(null);
       }
     });
     markersRef.current = {};
 
-    // Create markers for all car locations
+    // Add new markers using standard Marker (not AdvancedMarkerElement)
     Object.entries(carLocations).forEach(([carNum, location]) => {
       if (!location.latitude || !location.longitude) return;
 
       try {
-        const marker = new AdvancedMarkerElement({
+        const marker = new window.google.maps.Marker({
           map: mapRef.current,
           position: {
             lat: location.latitude,
             lng: location.longitude
           },
-          title: `Car ${carNum}`
+          title: `Car ${carNum}`,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: '#4285F4',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2
+          },
+          label: {
+            text: String(carNum),
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: 'bold'
+          }
         });
 
         markersRef.current[carNum] = marker;
@@ -153,11 +158,10 @@ const CouchNavigator = () => {
       }
     });
 
-    // Cleanup on unmount
     return () => {
       Object.values(markersRef.current).forEach(marker => {
-        if (marker && marker.map) {
-          marker.map = null;
+        if (marker && marker.setMap) {
+          marker.setMap(null);
         }
       });
     };
@@ -192,7 +196,7 @@ const CouchNavigator = () => {
     loadCars();
   }, [activeNDR]);
 
-  // Listen to messages for selected car
+  // Listen to messages with proper integer conversion and iOS PWA support
   useEffect(() => {
     if (!activeNDR || !selectedCar) {
       console.log('Message listener not active:', { activeNDR: !!activeNDR, selectedCar });
@@ -201,10 +205,12 @@ const CouchNavigator = () => {
       return;
     }
 
+    const carNum = parseInt(selectedCar, 10);
+
     console.log('🔵 Setting up message listener:', {
       ndrId: activeNDR.id,
-      carNumber: selectedCar,
-      carNumberType: typeof selectedCar,
+      carNumber: carNum,
+      carNumberType: typeof carNum,
       viewMode
     });
 
@@ -212,27 +218,28 @@ const CouchNavigator = () => {
     const messagesQuery = query(
       messagesRef,
       where('ndrId', '==', activeNDR.id),
-      where('carNumber', '==', selectedCar),
+      where('carNumber', '==', carNum),
       orderBy('timestamp', 'asc')
     );
 
     const unsubscribe = onSnapshot(
       messagesQuery,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.hasPendingWrites) {
+          console.log('📝 Skipping pending writes...');
+          return;
+        }
+
         console.log('📨 Message snapshot received:', {
           numDocs: snapshot.docs.length,
+          fromCache: snapshot.metadata.fromCache,
           viewMode,
-          carNumber: selectedCar
+          carNumber: carNum
         });
         
         const msgs = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Message doc:', {
-            id: doc.id,
-            sender: data.sender,
-            carNumber: data.carNumber,
-            message: data.message
-          });
           return {
             id: doc.id,
             ...data,
@@ -248,23 +255,17 @@ const CouchNavigator = () => {
           const isFromOtherParty = (viewMode === 'couch' && newMessage.sender === 'navigator') ||
                                     (viewMode === 'navigator' && newMessage.sender === 'couch');
           
-          console.log('New message check:', {
-            isFromOtherParty,
-            viewMode,
-            messageSender: newMessage.sender
-          });
-          
           if (isFromOtherParty) {
             playNotificationSound();
             
-            // Show browser notification if permitted and app is backgrounded
             if (notificationsEnabled && document.hidden) {
               try {
                 new Notification('New Message', {
                   body: `${newMessage.senderName}: ${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}`,
                   icon: '/logo192.png',
                   tag: `message-${newMessage.id}`,
-                  requireInteraction: false
+                  requireInteraction: false,
+                  silent: false
                 });
               } catch (error) {
                 console.error('Error showing notification:', error);
@@ -278,24 +279,26 @@ const CouchNavigator = () => {
       },
       (error) => {
         console.error('❌ Message listener error:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
         
         if (error.code === 'failed-precondition') {
           console.error('🔴 FIRESTORE INDEX REQUIRED!');
-          console.error('Create index at:', error.message);
-          alert('Database index required. Check console for link to create it.');
+          setDebugStatus('❌ Database index missing');
+        } else if (error.code === 'unavailable') {
+          console.error('🔴 Network unavailable');
+          setDebugStatus('❌ Network error');
+        } else {
+          setDebugStatus(`❌ Error: ${error.message}`);
         }
       }
     );
 
     return () => {
-      console.log('🔴 Cleaning up message listener for car:', selectedCar);
+      console.log('🔴 Cleaning up message listener for car:', carNum);
       unsubscribe();
     };
   }, [activeNDR, selectedCar, viewMode, notificationsEnabled]);
 
-  // Listen to all car locations (for couch view)
+  // Listen to all car locations with iOS PWA support
   useEffect(() => {
     if (!activeNDR || viewMode !== 'couch') return;
 
@@ -305,49 +308,64 @@ const CouchNavigator = () => {
       where('ndrId', '==', activeNDR.id)
     );
 
-    const unsubscribe = onSnapshot(locationsQuery, (snapshot) => {
-      const locations = {};
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        locations[data.carNumber] = {
-          ...data,
-          updatedAt: data.updatedAt?.toDate()
-        };
-      });
-      setCarLocations(locations);
-    });
+    const unsubscribe = onSnapshot(
+      locationsQuery,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (!snapshot.metadata.hasPendingWrites) {
+          const locations = {};
+          snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            locations[data.carNumber] = {
+              ...data,
+              updatedAt: data.updatedAt?.toDate()
+            };
+          });
+          console.log('📍 Car locations updated:', locations);
+          setCarLocations(locations);
+        }
+      }
+    );
 
     return () => unsubscribe();
   }, [activeNDR, viewMode]);
 
-  // Load active rides for selected car
+  // Load active rides with proper integer conversion and iOS PWA support
   useEffect(() => {
     if (!activeNDR || !selectedCar) {
       setActiveRides([]);
       return;
     }
 
+    const carNum = parseInt(selectedCar, 10);
+
     const ridesRef = collection(db, 'rides');
     const ridesQuery = query(
       ridesRef,
       where('ndrId', '==', activeNDR.id),
-      where('carNumber', '==', parseInt(selectedCar)),
+      where('carNumber', '==', carNum),
       where('status', 'in', ['active', 'pending'])
     );
 
-    const unsubscribe = onSnapshot(ridesQuery, (snapshot) => {
-      const rides = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        requestedAt: doc.data().requestedAt?.toDate()
-      }));
-      setActiveRides(rides);
-    });
+    const unsubscribe = onSnapshot(
+      ridesQuery,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (!snapshot.metadata.hasPendingWrites) {
+          const rides = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            requestedAt: doc.data().requestedAt?.toDate()
+          }));
+          setActiveRides(rides);
+        }
+      }
+    );
 
     return () => unsubscribe();
   }, [activeNDR, selectedCar]);
 
-  // Calculate distance between two points (Haversine formula)
+  // Calculate distance between two points
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
     const φ1 = lat1 * Math.PI / 180;
@@ -363,14 +381,19 @@ const CouchNavigator = () => {
     return R * c;
   };
 
-  // Adaptive location tracking based on movement
+  // Update location to Firestore - FIXED with immediate write and better error handling
   const updateLocationToFirestore = async (position) => {
-    if (!activeNDR || !carNumber) return;
+    if (!activeNDR || !selectedCar) {
+      console.log('⏭️ Skipping location update - missing activeNDR or selectedCar');
+      return;
+    }
 
-    const { latitude, longitude, speed } = position.coords;
+    const { latitude, longitude, speed, accuracy } = position.coords;
+    
+    console.log(`📍 Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${accuracy}m)`);
 
-    // Distance-based filtering
-    if (lastLocationRef.current) {
+    // More lenient distance-based filtering (only after first successful write)
+    if (lastLocationRef.current && lastLocationRef.current.lastWriteSuccess) {
       const distance = calculateDistance(
         lastLocationRef.current.latitude,
         lastLocationRef.current.longitude,
@@ -378,38 +401,46 @@ const CouchNavigator = () => {
         longitude
       );
 
-      if (distance < 50) {
-        console.log('Movement < 50m, skipping update');
+      // Only filter if movement is minimal AND accuracy is good
+      if (distance < 30 && accuracy < 100) {
+        console.log(`⏭️ Skipping update - movement only ${Math.round(distance)}m`);
         return;
       }
+      
+      console.log(`📏 Moved ${Math.round(distance)}m since last update`);
+    } else {
+      console.log('🆕 First location update or previous write failed - forcing write');
     }
 
     // Adaptive polling based on speed
     let newInterval = 5000;
-    if (speed) {
+    if (speed !== null && speed !== undefined) {
       if (speed > 20) {
-        newInterval = 3000;
+        newInterval = 3000; // Fast movement
       } else if (speed > 5) {
-        newInterval = 5000;
+        newInterval = 5000; // Medium speed
       } else if (speed > 1) {
-        newInterval = 10000;
+        newInterval = 10000; // Slow movement
       } else {
-        newInterval = 30000;
+        newInterval = 30000; // Stationary
       }
+      console.log(`🏃 Speed: ${speed.toFixed(1)} m/s, interval: ${newInterval}ms`);
     }
 
     if (newInterval !== updateInterval) {
       setUpdateInterval(newInterval);
     }
 
-    lastLocationRef.current = { latitude, longitude };
-
     try {
       const locationsRef = collection(db, 'carLocations');
+      const carNum = parseInt(selectedCar, 10);
+      
+      console.log(`💾 Updating Firestore for car ${carNum}...`);
+      
       const existingQuery = query(
         locationsRef,
         where('ndrId', '==', activeNDR.id),
-        where('carNumber', '==', parseInt(carNumber))
+        where('carNumber', '==', carNum)
       );
       
       const existingDocs = await getDocs(existingQuery);
@@ -417,103 +448,279 @@ const CouchNavigator = () => {
       if (existingDocs.empty) {
         await addDoc(locationsRef, {
           ndrId: activeNDR.id,
-          carNumber: parseInt(carNumber),
+          carNumber: carNum,
           latitude,
           longitude,
+          accuracy,
           updatedAt: Timestamp.now()
         });
-        console.log('Location created in Firestore');
+        console.log('✅ Location document created');
       } else {
         const docRef = doc(db, 'carLocations', existingDocs.docs[0].id);
         await updateDoc(docRef, {
           latitude,
           longitude,
+          accuracy,
           updatedAt: Timestamp.now()
         });
-        console.log('Location updated in Firestore');
+        console.log('✅ Location updated in Firestore');
       }
+      
+      // Only update lastLocationRef AFTER successful write
+      lastLocationRef.current = { 
+        latitude, 
+        longitude, 
+        lastWriteSuccess: true 
+      };
+      
+      // Update UI to show last successful update
+      setLastLocationUpdate(new Date());
+      
+      // Clear any previous errors
+      setLocationError('');
+      
     } catch (error) {
-      console.error('Error updating location:', error);
+      console.error('❌ Error updating location to Firestore:', error);
+      
+      // Mark write as failed so next update will retry
+      if (lastLocationRef.current) {
+        lastLocationRef.current.lastWriteSuccess = false;
+      }
+      
+      setDebugStatus('⚠️ Firestore update failed - will retry');
+      setTimeout(() => setDebugStatus(''), 3000);
     }
   };
 
-  // Location tracking for navigator
+  // Location tracking for navigator - FIXED for iOS PWA
   useEffect(() => {
-    if (viewMode !== 'navigator' || !carNumber || !locationEnabled || !activeNDR) {
+    if (viewMode !== 'navigator' || !selectedCar || !locationEnabled || !activeNDR) {
       if (locationUpdateTimerRef.current) {
         clearInterval(locationUpdateTimerRef.current);
         locationUpdateTimerRef.current = null;
       }
+      if (locationWatchId.current) {
+        navigator.geolocation.clearWatch(locationWatchId.current);
+        locationWatchId.current = null;
+      }
       return;
     }
 
+    console.log('🚗 Starting location tracking for car:', selectedCar);
+
     const handleError = (error) => {
-      console.error('Location error:', error);
-      setLocationError('Unable to get location: ' + error.message);
-      setLocationEnabled(false);
+      console.error('❌ watchPosition error:', error.code, error.message);
+      
+      if (error.code === 2) {
+        console.warn('⚠️ Position temporarily unavailable, will retry...');
+        return;
+      }
+      
+      if (error.code === 3) {
+        console.warn('⚠️ Location timeout, will retry...');
+        return;
+      }
+      
+      if (error.code === 1) {
+        setLocationError('❌ Location permission was revoked');
+        setLocationEnabled(false);
+      }
     };
 
+    const watchOptions = {
+      enableHighAccuracy: false,
+      timeout: 30000,
+      maximumAge: 5000
+    };
+
+    console.log('📍 Starting watchPosition with options:', watchOptions);
+
     locationWatchId.current = navigator.geolocation.watchPosition(
-      updateLocationToFirestore,
+      (position) => {
+        console.log('✅ Location update received:', position.coords.latitude, position.coords.longitude);
+        updateLocationToFirestore(position);
+      },
       handleError,
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      }
+      watchOptions
     );
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        console.log('App backgrounded - location tracking will be limited');
-        if (lastLocationRef.current) {
-          console.log('Sending final location update before background');
-        }
+        console.log('📱 App backgrounded');
       } else {
-        console.log('App foregrounded - location tracking resumed');
+        console.log('📱 App foregrounded');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      console.log('🔴 Cleaning up location tracking');
       if (locationWatchId.current) {
         navigator.geolocation.clearWatch(locationWatchId.current);
+        locationWatchId.current = null;
       }
       if (locationUpdateTimerRef.current) {
         clearInterval(locationUpdateTimerRef.current);
+        locationUpdateTimerRef.current = null;
       }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [viewMode, carNumber, locationEnabled, activeNDR, updateInterval]);
+  }, [viewMode, selectedCar, locationEnabled, activeNDR]);
 
-  const requestLocationPermission = () => {
+  // Check if location permission is already granted/denied
+  const checkLocationPermission = async () => {
+    if ('permissions' in navigator) {
+      try {
+        const result = await navigator.permissions.query({ name: 'geolocation' });
+        console.log('📍 Permission state:', result.state);
+        return result.state;
+      } catch (error) {
+        console.log('Permissions API not available:', error);
+        return 'prompt';
+      }
+    }
+    return 'prompt';
+  };
+
+  const requestLocationPermission = async () => {
     if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser');
+      setLocationError('❌ Geolocation is not supported by your device');
       return;
     }
 
     setLocationError('');
-    navigator.geolocation.getCurrentPosition(
-      () => {
-        setLocationEnabled(true);
-        console.log('Location permission granted');
-      },
-      (error) => {
-        setLocationError('Location permission denied: ' + error.message);
-        setLocationEnabled(false);
-        console.error('Location error:', error);
-      },
-      {
-        enableHighAccuracy: true
+    setDebugStatus('📍 Checking permission...');
+    
+    const permissionState = await checkLocationPermission();
+    console.log('Current permission state:', permissionState);
+    
+    if (permissionState === 'denied') {
+      let errorMessage = '⚠️ Location access is blocked. ';
+      if (platformInfo.isIOS) {
+        if (platformInfo.isPWA) {
+          errorMessage += '\n\n📱 To enable:\n1. Go to iPhone Settings\n2. Scroll down and find this app\n3. Tap Location\n4. Select "While Using"';
+        } else {
+          errorMessage += '\n\n🌐 To enable:\n1. Go to iPhone Settings\n2. Safari → Location\n3. Select "Ask" or "Allow"';
+        }
       }
-    );
+      setLocationError(errorMessage);
+      setDebugStatus('❌ Permission blocked');
+      return;
+    }
+
+    setDebugStatus('📍 Requesting location...');
+    console.log('🔔 Requesting geolocation - popup should appear!');
+    
+    const tryGetLocation = (highAccuracy, attempt = 1) => {
+      return new Promise((resolve, reject) => {
+        console.log(`Attempt ${attempt} with highAccuracy: ${highAccuracy}`);
+        
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            console.log('✅ Location obtained!', position);
+            resolve(position);
+          },
+          (error) => {
+            console.error(`❌ Attempt ${attempt} failed:`, error);
+            reject(error);
+          },
+          {
+            enableHighAccuracy: highAccuracy,
+            timeout: attempt === 1 ? 15000 : 30000,
+            maximumAge: 0
+          }
+        );
+      });
+    };
+
+    try {
+      // Attempt 1: High accuracy
+      const position = await tryGetLocation(true, 1);
+      console.log('✅ Location permission granted!', position);
+      
+      // CRITICAL FIX: Write initial location to Firestore immediately
+      await updateLocationToFirestore(position);
+      
+      setLocationEnabled(true);
+      setDebugStatus('✅ Location enabled!');
+      setLocationError('');
+      setTimeout(() => setDebugStatus(''), 3000);
+      
+    } catch (error1) {
+      console.error('❌ High accuracy failed, trying low accuracy...', error1);
+      
+      try {
+        const position = await tryGetLocation(false, 2);
+        console.log('✅ Location obtained with low accuracy!', position);
+        
+        // CRITICAL FIX: Write initial location to Firestore immediately
+        await updateLocationToFirestore(position);
+        
+        setLocationEnabled(true);
+        setDebugStatus('✅ Location enabled (low accuracy)');
+        setLocationError('⚠️ Using WiFi/cell tower location (less accurate). For better accuracy, go outside or near a window.');
+        setTimeout(() => setLocationError(''), 8000);
+        
+      } catch (error2) {
+        console.error('❌ Both attempts failed:', error2);
+        handleLocationError(error2);
+      }
+    }
   };
 
-  // Request notification permission
+  const handleLocationError = (error) => {
+    console.error('Location error code:', error.code);
+    console.error('Location error message:', error.message);
+    
+    let errorMessage = '';
+    let instructions = '';
+    
+    switch(error.code) {
+      case 1:
+        errorMessage = '🚫 Location permission was denied';
+        if (platformInfo.isIOS) {
+          if (platformInfo.isPWA) {
+            instructions = '\n\n📱 To fix:\n1. Close this app\n2. iPhone Settings → [This App]\n3. Location → "While Using"\n4. Reopen app';
+          } else {
+            instructions = '\n\n🌐 To fix:\n1. iPhone Settings → Safari\n2. Location → "Ask" or "Allow"\n3. Refresh page';
+          }
+        }
+        break;
+        
+      case 2:
+        errorMessage = '📍 Unable to determine your location';
+        instructions = '\n\n⚠️ This usually means:\n\n';
+        instructions += '1️⃣ Location Services are OFF\n';
+        instructions += '   • iPhone Settings → Privacy & Security\n';
+        instructions += '   • Location Services → Toggle ON (green)\n\n';
+        instructions += '2️⃣ No GPS signal\n';
+        instructions += '   • Go outside or near a window\n';
+        instructions += '   • Wait 30 seconds for GPS to lock\n\n';
+        instructions += '3️⃣ Airplane mode is ON\n';
+        instructions += '   • Swipe down and check airplane icon\n\n';
+        instructions += '4️⃣ Poor signal area\n';
+        instructions += '   • Try again in a different location';
+        break;
+        
+      case 3:
+        errorMessage = '⏱️ Location request timed out';
+        instructions = '\n\nTry again:\n• Make sure you\'re not in airplane mode\n• Go outside for better GPS signal\n• Wait a moment and try again';
+        break;
+        
+      default:
+        errorMessage = '❌ Location error occurred';
+        instructions = '\n\nError details: ' + (error.message || 'Unknown error');
+    }
+    
+    setLocationError(errorMessage + instructions);
+    setLocationEnabled(false);
+    setDebugStatus('❌ Location failed');
+  };
+
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
-      alert('This browser does not support notifications');
+      alert('Notifications not supported');
       return false;
     }
 
@@ -524,7 +731,7 @@ const CouchNavigator = () => {
       
       if (granted) {
         new Notification('Notifications Enabled', {
-          body: 'You will now receive updates about messages and rides',
+          body: 'You will now receive message updates',
           icon: '/logo192.png',
           tag: 'test-notification'
         });
@@ -532,11 +739,12 @@ const CouchNavigator = () => {
       
       return granted;
     } catch (error) {
-      console.error('Error requesting notification permission:', error);
+      console.error('Notification error:', error);
       return false;
     }
   };
 
+  // Send message with proper integer conversion
   const sendMessage = async () => {
     if (!newMessage.trim()) {
       setDebugStatus('❌ Message is empty');
@@ -556,48 +764,45 @@ const CouchNavigator = () => {
       return;
     }
 
-    if (sendingMessage) {
-      setDebugStatus('⏳ Already sending...');
-      return;
-    }
+    if (sendingMessage) return;
 
     setSendingMessage(true);
-    setDebugStatus('📤 Sending message...');
+    setDebugStatus('📤 Sending...');
+
+    const carNum = parseInt(selectedCar, 10);
 
     const messageData = {
       ndrId: activeNDR.id,
-      carNumber: selectedCar,
+      carNumber: carNum,
       sender: viewMode,
       senderName: userProfile?.name || (viewMode === 'couch' ? 'Couch' : 'Navigator'),
       message: newMessage.trim(),
       timestamp: Timestamp.now()
     };
 
-    console.log('✉️ Attempting to send:', messageData);
+    console.log('✉️ Sending:', messageData);
 
     try {
       const docRef = await addDoc(collection(db, 'couchMessages'), messageData);
       console.log('✅ SUCCESS! Doc ID:', docRef.id);
       
-      setDebugStatus('✅ Message sent!');
+      setDebugStatus('✅ Sent!');
       setNewMessage('');
       
       setTimeout(() => setDebugStatus(''), 2000);
     } catch (error) {
       console.error('❌ SEND ERROR:', error);
       
-      let errorMsg = 'Failed to send: ';
+      let errorMsg = 'Failed: ';
       if (error.code === 'permission-denied') {
-        errorMsg += 'Permission denied. Check if you are logged in.';
-      } else if (error.code === 'failed-precondition') {
-        errorMsg += 'Database index missing. Check console for link.';
+        errorMsg += 'Permission denied';
+      } else if (error.code === 'unavailable') {
+        errorMsg += 'Network unavailable';
       } else {
         errorMsg += error.message;
       }
       
-      setDebugStatus('❌ ' + errorMsg);
-      alert(errorMsg);
-      
+      setDebugStatus(`❌ ${errorMsg}`);
       setTimeout(() => setDebugStatus(''), 5000);
     } finally {
       setSendingMessage(false);
@@ -634,7 +839,7 @@ const CouchNavigator = () => {
     <div className="min-h-screen bg-gray-50 pb-20">
       {platformInfo.isMobile && !platformInfo.isPWA && (
         <div className="bg-blue-600 text-white p-3 text-center text-sm">
-          📱 For best experience with background location, add this app to your home screen
+          📱 For best experience, add this app to your home screen
         </div>
       )}
 
@@ -649,7 +854,7 @@ const CouchNavigator = () => {
               <button
                 onClick={() => setShowDebug(!showDebug)}
                 className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition text-xs"
-                title="Toggle debug info"
+                title="Toggle debug"
               >
                 🐛
               </button>
@@ -661,13 +866,11 @@ const CouchNavigator = () => {
                     ? 'bg-green-100 text-green-700'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
-                title={notificationsEnabled ? 'Notifications enabled' : 'Enable notifications'}
               >
                 {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
               </button>
               <button
                 onClick={() => {
-                  console.log('Switching to couch view');
                   setViewMode('couch');
                   setLocationEnabled(false);
                 }}
@@ -680,10 +883,7 @@ const CouchNavigator = () => {
                 🛋️ Couch
               </button>
               <button
-                onClick={() => {
-                  console.log('Switching to navigator view');
-                  setViewMode('navigator');
-                }}
+                onClick={() => setViewMode('navigator')}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   viewMode === 'navigator'
                     ? 'bg-[#79F200] text-gray-900'
@@ -701,7 +901,7 @@ const CouchNavigator = () => {
         {showDebug && (
           <div className="mb-6 bg-gray-900 text-green-400 rounded-xl p-4 font-mono text-xs">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="font-bold text-white">Debug Info</h3>
+              <h3 className="font-bold text-white">🔍 Debug Panel</h3>
               <button
                 onClick={() => setShowDebug(false)}
                 className="text-white hover:text-red-400"
@@ -710,29 +910,31 @@ const CouchNavigator = () => {
               </button>
             </div>
             <div className="space-y-1">
-              <div className="text-yellow-400 font-bold">📊 EXPECTED BEHAVIOR:</div>
-              <div className="text-white text-xs mb-2">
-                Couch: Selected Car should have value, Car Number Input should be empty<br/>
-                Navigator: BOTH Selected Car AND Car Number Input should have same value
-              </div>
               <div className={selectedCar ? 'text-green-400' : 'text-red-400'}>
-                ✓ Selected Car: {selectedCar || 'NONE - NOT CONNECTED!'} {selectedCar ? '(Type: ' + typeof selectedCar + ')' : ''}
+                Selected Car: {selectedCar || 'NONE'} {selectedCar && `(Type: ${typeof selectedCar})`}
+                {typeof selectedCar === 'string' && <span className="text-red-400 ml-2">⚠️ SHOULD BE NUMBER!</span>}
               </div>
-              <div className={carNumber ? 'text-green-400' : 'text-gray-500'}>
-                ✓ Car Number Input: {carNumber || 'empty'} {carNumber ? '(Type: ' + typeof carNumber + ')' : ''}
-              </div>
-              <div>View: {viewMode}</div>
-              <div>Active NDR: {activeNDR ? activeNDR.id : 'none'}</div>
+              <div>View Mode: {viewMode}</div>
+              <div>Active NDR: {activeNDR?.id || 'none'}</div>
               <div>User: {userProfile?.name || 'loading...'}</div>
-              <div>Auth UID: {userProfile ? 'yes' : 'no'}</div>
               <div>Messages Loaded: {messages.length}</div>
-              <div>Sending: {sendingMessage ? 'YES' : 'NO'}</div>
-              <div>Google Maps: {googleMapsLoaded ? '✅ Loaded' : googleMapsError ? '❌ Error' : '⏳ Loading'}</div>
-              <div>Platform: {platformInfo.isMobile ? 'Mobile' : 'Desktop'} {platformInfo.isIOS ? 'iOS' : platformInfo.isAndroid ? 'Android' : ''}</div>
-              <div>PWA: {platformInfo.isPWA ? 'Yes' : 'No'}</div>
+              <div>Location: {locationEnabled ? '🟢 Enabled' : '🔴 Disabled'}</div>
+              <div>Platform: {platformInfo.isPWA ? 'PWA' : 'Browser'} | {platformInfo.isIOS ? 'iOS' : platformInfo.isAndroid ? 'Android' : 'Desktop'}</div>
+              <div>Network: {navigator.onLine ? '🟢 Online' : '🔴 Offline'}</div>
+              {locationEnabled && lastLocationUpdate && (
+                <div className="text-green-400">
+                  Last Firestore Write: {lastLocationUpdate.toLocaleTimeString()}
+                </div>
+              )}
+              {locationEnabled && lastLocationRef.current && (
+                <div className="text-blue-400">
+                  Current Position: {lastLocationRef.current.latitude?.toFixed(6)}, {lastLocationRef.current.longitude?.toFixed(6)}
+                  {lastLocationRef.current.lastWriteSuccess === false && <span className="text-red-400 ml-2">⚠️ Last write failed</span>}
+                </div>
+              )}
               {debugStatus && (
-                <div className="text-yellow-300 mt-2">
-                  Last Status: {debugStatus}
+                <div className="text-yellow-300 mt-2 bg-gray-800 p-2 rounded">
+                  Status: {debugStatus}
                 </div>
               )}
             </div>
@@ -750,7 +952,7 @@ const CouchNavigator = () => {
                 value={selectedCar || ''}
                 onChange={(e) => {
                   const value = e.target.value;
-                  const carNum = value ? parseInt(value) : null;
+                  const carNum = value ? parseInt(value, 10) : null;
                   setSelectedCar(carNum);
                   console.log('🛋️ Couch selected car:', carNum, 'Type:', typeof carNum);
                 }}
@@ -759,8 +961,7 @@ const CouchNavigator = () => {
                 <option value="">Select a car...</option>
                 {Array.from({ length: activeNDR.availableCars || 0 }, (_, i) => i + 1).map(num => (
                   <option key={num} value={num}>
-                    Car {num} {availableCars.find(c => c.carNumber === num) ? 
-                      `- ${availableCars.find(c => c.carNumber === num).driverName}` : ''}
+                    Car {num} {availableCars.find(c => c.carNumber === num) ? `- ${availableCars.find(c => c.carNumber === num).driverName}` : ''}
                   </option>
                 ))}
               </select>
@@ -780,21 +981,13 @@ const CouchNavigator = () => {
                         lat: carLocations[selectedCar].latitude,
                         lng: carLocations[selectedCar].longitude
                       }}
-                      zoom={14}
+                      zoom={15}
                       onLoad={onMapLoad}
                       options={mapOptions}
                     />
                     <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                       <Clock size={12} />
                       Last updated: {carLocations[selectedCar].updatedAt?.toLocaleTimeString() || 'Unknown'}
-                    </p>
-                  </div>
-                )}
-
-                {googleMapsError && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                    <p className="text-sm text-red-800">
-                      ⚠️ Error loading Google Maps. Please check your API key and refresh the page.
                     </p>
                   </div>
                 )}
@@ -816,32 +1009,29 @@ const CouchNavigator = () => {
                   ) : (
                     <div className="space-y-3">
                       {activeRides.map(ride => (
-                        <div key={ride.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                          <div className="flex justify-between items-start mb-2">
+                        <div key={ride.id} className="border-2 border-gray-200 rounded-xl p-4">
+                          <div className="flex items-start justify-between">
                             <div>
-                              <p className="font-bold text-gray-900">{ride.patronName}</p>
+                              <p className="font-bold text-gray-900">{ride.name}</p>
                               <p className="text-sm text-gray-600">{ride.phone}</p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <p className="flex items-center gap-1">
+                                  <MapPin size={14} className="text-green-600" />
+                                  <span className="font-medium">Pickup:</span> {ride.pickup}
+                                </p>
+                                {ride.dropoffs?.map((dropoff, idx) => (
+                                  <p key={idx} className="flex items-center gap-1">
+                                    <MapPin size={14} className="text-red-600" />
+                                    <span className="font-medium">Drop {idx + 1}:</span> {dropoff}
+                                  </p>
+                                ))}
+                              </div>
                             </div>
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              ride.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                              ride.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                             }`}>
-                              {ride.status.toUpperCase()}
+                              {ride.status}
                             </span>
-                          </div>
-                          <div className="space-y-1 text-sm">
-                            <p className="flex items-start gap-2">
-                              <MapPin size={14} className="text-green-600 mt-0.5 flex-shrink-0" />
-                              <span><strong>Pickup:</strong> {ride.pickup}</span>
-                            </p>
-                            {(ride.dropoffs || [ride.dropoff]).map((dropoff, idx) => (
-                              <p key={idx} className="flex items-start gap-2">
-                                <MapPin size={14} className="text-red-600 mt-0.5 flex-shrink-0" />
-                                <span><strong>Dropoff {(ride.dropoffs || [ride.dropoff]).length > 1 ? idx + 1 : ''}:</strong> {dropoff}</span>
-                              </p>
-                            ))}
-                            <p className="text-gray-600">
-                              <strong>Riders:</strong> {ride.riders}
-                            </p>
                           </div>
                         </div>
                       ))}
@@ -849,17 +1039,15 @@ const CouchNavigator = () => {
                   )}
                 </div>
 
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                  <div className="bg-[#79F200] p-4">
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <MessageSquare size={20} />
-                      Messages with Car {selectedCar}
-                    </h3>
-                  </div>
-
-                  <div className="h-96 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <MessageSquare size={20} />
+                    Messages with Car {selectedCar}
+                  </h3>
+                  
+                  <div className="h-80 overflow-y-auto mb-4 space-y-3 p-4 bg-gray-50 rounded-xl">
                     {messages.length === 0 ? (
-                      <p className="text-center text-gray-500 py-8">No messages yet. Start the conversation!</p>
+                      <p className="text-center text-gray-500 py-8">No messages yet</p>
                     ) : (
                       messages.map(msg => (
                         <div
@@ -874,9 +1062,9 @@ const CouchNavigator = () => {
                             }`}
                           >
                             <p className="text-xs font-semibold mb-1 opacity-70">
-                              {msg.sender === 'couch' ? '🛋️ Couch' : '🧭 Navigator'} - {msg.senderName}
+                              {msg.sender === 'couch' ? 'You (Couch)' : msg.senderName}
                             </p>
-                            <p className="text-sm break-words">{msg.message}</p>
+                            <p className="text-sm">{msg.message}</p>
                             <p className="text-xs opacity-60 mt-1">
                               {msg.timestamp?.toLocaleTimeString()}
                             </p>
@@ -887,65 +1075,26 @@ const CouchNavigator = () => {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <div className="p-4 bg-white border-t border-gray-200">
-                    {debugStatus && (
-                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 text-center">
-                        {debugStatus}
-                      </div>
-                    )}
-                    
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !sendingMessage) {
-                            e.preventDefault();
-                            sendMessage();
-                          }
-                        }}
-                        placeholder="Type a message..."
-                        disabled={sendingMessage}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('🖱️ Send button clicked');
-                          sendMessage();
-                        }}
-                        onTouchEnd={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('👆 Send button touched');
-                          sendMessage();
-                        }}
-                        disabled={!newMessage.trim() || sendingMessage}
-                        className="px-6 py-3 bg-[#79F200] text-gray-900 rounded-xl font-bold hover:shadow-lg transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        {sendingMessage ? (
-                          <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <Send size={18} />
-                        )}
-                        {!sendingMessage && 'Send'}
-                      </button>
-                    </div>
-                    
-                    {showDebug && (
-                      <button
-                        onClick={() => {
-                          console.log('Test button clicked!');
-                          alert('Button works! Check console.');
-                        }}
-                        className="w-full mt-2 p-2 bg-blue-500 text-white rounded text-sm"
-                      >
-                        🧪 Test Touch (should show alert)
-                      </button>
-                    )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      placeholder="Type a message..."
+                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] outline-none"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={sendingMessage || !newMessage.trim()}
+                      className="px-6 py-3 bg-[#79F200] text-gray-900 rounded-xl font-bold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {sendingMessage ? (
+                        <div className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Send size={18} />
+                      )}
+                    </button>
                   </div>
                 </div>
               </>
@@ -953,141 +1102,43 @@ const CouchNavigator = () => {
           </div>
         ) : (
           <div className="space-y-6">
-            {!carNumber && (
+            {!selectedCar && (
               <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
                 <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                   <Car size={20} />
-                  Enter Your Car Number
+                  Select Your Car Number
                 </h2>
                 
-                {/* Show current state for debugging */}
-                {showDebug && (
-                  <div className="mb-3 p-2 bg-yellow-50 border border-yellow-300 rounded text-xs">
-                    <div>carNumber state: "{carNumber}" (type: {typeof carNumber})</div>
-                    <div>selectedCar state: {selectedCar === null ? 'null' : selectedCar}</div>
-                    <div>Button should be: {!carNumber || parseInt(carNumber) < 1 ? 'DISABLED' : 'ENABLED'}</div>
-                  </div>
-                )}
-                
-                <input
-                  type="number"
-                  min="1"
-                  max={activeNDR.availableCars || 10}
-                  placeholder="Enter car number..."
-                  value={carNumber}
+                <select
+                  value={selectedCar || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setCarNumber(value);
-                    setDebugStatus(`Input changed: "${value}" (type: ${typeof value})`);
-                    console.log('📝 Car number input changed:', value, 'Type:', typeof value);
-                  }}
-                  onFocus={() => console.log('📝 Input focused')}
-                  onBlur={() => console.log('📝 Input blurred')}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] text-gray-900 font-medium text-lg"
-                />
-                
-                {/* Add a big, obvious test area */}
-                <div className="mt-3 p-3 bg-red-50 border-2 border-red-500 rounded-xl">
-                  <p className="text-sm font-bold text-red-900 mb-2">🚨 TAP TEST AREA - Does this work?</p>
-                  <button
-                    onMouseDown={() => console.log('🖱️ MOUSEDOWN on test button')}
-                    onMouseUp={() => console.log('🖱️ MOUSEUP on test button')}
-                    onTouchStart={() => console.log('👆 TOUCHSTART on test button')}
-                    onTouchEnd={() => console.log('👆 TOUCHEND on test button')}
-                    onClick={() => {
-                      console.log('🖱️ CLICK on test button');
-                      alert('TEST BUTTON WORKS! ✅');
-                    }}
-                    className="w-full p-4 bg-red-500 text-white rounded-lg font-bold text-lg"
-                  >
-                    TAP HERE FIRST - Test Button
-                  </button>
-                </div>
-                
-                {/* Connect button with ALL event handlers */}
-                <button
-                  onMouseDown={(e) => {
-                    console.log('🖱️ MOUSEDOWN on Connect button');
-                    setDebugStatus('🖱️ Mouse down detected');
-                  }}
-                  onMouseUp={(e) => {
-                    console.log('🖱️ MOUSEUP on Connect button');
-                    setDebugStatus('🖱️ Mouse up detected');
-                  }}
-                  onTouchStart={(e) => {
-                    console.log('👆 TOUCHSTART on Connect button');
-                    setDebugStatus('👆 Touch start detected');
-                  }}
-                  onTouchEnd={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('👆 TOUCHEND on Connect button - ATTEMPTING CONNECTION');
-                    setDebugStatus('👆 Touch end - connecting...');
-                    
-                    const carNum = parseInt(carNumber);
-                    console.log('Parsed car number:', carNum, 'from:', carNumber);
-                    
-                    if (carNumber && carNum > 0) {
-                      console.log('✅ SETTING selectedCar to:', carNum);
+                    const carNum = value ? parseInt(value, 10) : null;
+                    if (carNum) {
                       setSelectedCar(carNum);
-                      setDebugStatus(`✅ Connected! selectedCar set to ${carNum}`);
-                    } else {
-                      console.log('❌ Invalid:', carNumber, 'parsed to:', carNum);
-                      setDebugStatus('❌ Invalid car number');
-                      alert('Please enter a valid car number (1 or higher)');
+                      setCarNumber(value);
+                      console.log('🧭 Navigator selected car:', carNum, 'Type:', typeof carNum);
+                      setDebugStatus(`✅ Connected as Car ${carNum}`);
+                      setTimeout(() => setDebugStatus(''), 2000);
                     }
                   }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🖱️ CLICK on Connect button - ATTEMPTING CONNECTION');
-                    setDebugStatus('🖱️ Click - connecting...');
-                    
-                    const carNum = parseInt(carNumber);
-                    console.log('Parsed car number:', carNum, 'from:', carNumber);
-                    
-                    if (carNumber && carNum > 0) {
-                      console.log('✅ SETTING selectedCar to:', carNum);
-                      setSelectedCar(carNum);
-                      setDebugStatus(`✅ Connected! selectedCar set to ${carNum}`);
-                    } else {
-                      console.log('❌ Invalid:', carNumber, 'parsed to:', carNum);
-                      setDebugStatus('❌ Invalid car number');
-                      alert('Please enter a valid car number (1 or higher)');
-                    }
-                  }}
-                  disabled={!carNumber || parseInt(carNumber) < 1}
-                  className="w-full mt-3 px-6 py-4 bg-[#79F200] text-gray-900 rounded-xl font-bold text-lg hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                  style={{ 
-                    touchAction: 'manipulation',
-                    WebkitTapHighlightColor: 'rgba(121, 242, 0, 0.3)'
-                  }}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 text-gray-900 font-medium"
                 >
-                  🚀 CONNECT AS CAR {carNumber || '?'}
-                </button>
+                  <option value="">Select your car number...</option>
+                  {Array.from({ length: activeNDR.availableCars || 20 }, (_, i) => i + 1).map(num => (
+                    <option key={num} value={num}>
+                      Car {num} {availableCars.find(c => c.carNumber === num) ? `- ${availableCars.find(c => c.carNumber === num).driverName}` : ''}
+                    </option>
+                  ))}
+                </select>
                 
-                <div className="mt-2 text-xs text-gray-600 text-center">
-                  If button doesn't work, try test button above first
-                </div>
-                
-                {/* Alternative: Direct link that forces connection */}
-                {showDebug && carNumber && (
-                  <button
-                    onClick={() => {
-                      const num = parseInt(carNumber);
-                      console.log('🔧 FORCE CONNECT via debug button:', num);
-                      setSelectedCar(num);
-                      setDebugStatus('🔧 Force connected via debug');
-                    }}
-                    className="w-full mt-2 p-2 bg-purple-600 text-white rounded text-sm font-bold"
-                  >
-                    🔧 DEBUG: Force Connect (bypass touch)
-                  </button>
-                )}
+                <p className="text-sm text-gray-500 mt-3">
+                  💡 Select the car number you're driving to enable messaging with the couch
+                </p>
               </div>
             )}
 
-            {carNumber && selectedCar && (
+            {selectedCar && (
               <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4 flex items-center justify-between">
                 <div>
                   <p className="font-bold text-blue-900">Connected as Car {selectedCar}</p>
@@ -1099,6 +1150,9 @@ const CouchNavigator = () => {
                     setCarNumber('');
                     setSelectedCar(null);
                     setLocationEnabled(false);
+                    setLastLocationUpdate(null);
+                    setDebugStatus('🔴 Disconnected');
+                    setTimeout(() => setDebugStatus(''), 2000);
                   }}
                   className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bold hover:bg-red-200"
                 >
@@ -1107,7 +1161,7 @@ const CouchNavigator = () => {
               </div>
             )}
 
-            {carNumber && (
+            {selectedCar && (
               <>
                 {platformInfo.isMobile && (
                   <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-4">
@@ -1115,9 +1169,11 @@ const CouchNavigator = () => {
                       ⚠️ <strong>Important:</strong> Location tracking will stop when you lock your phone or switch apps. 
                       {!platformInfo.isPWA && ' For better tracking, add this app to your home screen.'}
                     </p>
-                    <p className="text-xs text-yellow-700 mt-2">
-                      Update interval: {updateInterval / 1000}s (adaptive based on speed)
-                    </p>
+                    {platformInfo.isIOS && (
+                      <p className="text-xs text-yellow-700 mt-2">
+                        📱 <strong>iOS Note:</strong> If location isn't working, go to Settings → Privacy & Security → Location Services → Safari Websites → Allow
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1129,104 +1185,144 @@ const CouchNavigator = () => {
                   
                   {!locationEnabled ? (
                     <div className="space-y-3">
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="text-sm text-blue-800 mb-3">
-                          📍 Enable location sharing so the couch can track your position in real-time.
-                          {platformInfo.isMobile && (
-                            <span className="block mt-2 text-xs">
-                              Note: Keep the app open and screen unlocked for continuous tracking on mobile.
-                            </span>
-                          )}
+                      <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-4">
+                        <p className="text-sm text-blue-900 font-medium mb-2">
+                          📍 Location sharing allows the couch to track your position in real-time.
                         </p>
-                        <button
-                          onClick={requestLocationPermission}
-                          className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2"
-                        >
-                          <Navigation size={18} />
-                          Enable Location Sharing
-                        </button>
+                        <p className="text-xs text-blue-700">
+                          When you tap the button below, your iPhone will show a popup asking for permission.
+                        </p>
                       </div>
+                      
+                      {platformInfo.isIOS && (
+                        <div className="bg-purple-50 border border-purple-300 rounded-lg p-3">
+                          <p className="text-xs text-purple-900 font-bold mb-2">
+                            🍎 IMPORTANT: Check System Settings First
+                          </p>
+                          <p className="text-xs text-purple-800 mb-2">
+                            Before clicking the button, make sure Location Services are enabled:
+                          </p>
+                          <ol className="text-xs text-purple-800 space-y-1 ml-4 list-decimal">
+                            <li><strong>iPhone Settings</strong> (gear icon)</li>
+                            <li><strong>Privacy & Security</strong></li>
+                            <li><strong>Location Services</strong></li>
+                            <li>Toggle must be <strong>ON (green)</strong></li>
+                          </ol>
+                          <div className="mt-2 pt-2 border-t border-purple-200">
+                            <p className="text-xs text-purple-700 italic">
+                              💡 If the toggle is OFF, turn it ON first, then come back here and try again.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={requestLocationPermission}
+                        className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold text-lg hover:from-blue-700 hover:to-blue-800 transition flex items-center justify-center gap-3 shadow-lg"
+                        style={{
+                          touchAction: 'manipulation',
+                          WebkitTapHighlightColor: 'rgba(59, 130, 246, 0.3)'
+                        }}
+                      >
+                        <Navigation size={24} />
+                        Enable Location Sharing
+                      </button>
+                      
+                      <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+                        <p className="text-xs text-gray-700 font-medium mb-1">
+                          What happens when you click:
+                        </p>
+                        <ol className="text-xs text-gray-600 space-y-1 ml-4 list-decimal">
+                          <li>iOS shows permission popup</li>
+                          <li>Tap <strong>"Allow"</strong></li>
+                          <li>App gets your GPS location</li>
+                          <li>Green checkmark appears ✅</li>
+                          <li>Location sent to couch immediately</li>
+                        </ol>
+                      </div>
+                      
                       {locationError && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                          <p className="text-sm text-red-700">{locationError}</p>
+                        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+                          <p className="text-sm text-red-900 font-bold mb-2">⚠️ Location Access Issue</p>
+                          <p className="text-sm text-red-800 whitespace-pre-line">{locationError}</p>
+                          
+                          {platformInfo.isIOS && (
+                            <div className="mt-3 pt-3 border-t border-red-200">
+                              <p className="text-xs text-red-700 font-medium mb-2">
+                                Quick diagnostic:
+                              </p>
+                              <button
+                                onClick={async () => {
+                                  const state = await checkLocationPermission();
+                                  alert(`Permission state: ${state}\n\nIf "denied", you must enable it in iPhone Settings.`);
+                                }}
+                                className="text-xs bg-red-100 hover:bg-red-200 text-red-800 px-3 py-2 rounded font-medium"
+                              >
+                                Check Permission Status
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
-                        <CheckCircle className="text-green-600 flex-shrink-0" size={24} />
+                      <div className="flex items-center gap-2 text-green-600 bg-green-50 border-2 border-green-400 rounded-lg p-4">
+                        <CheckCircle size={28} />
                         <div className="flex-1">
-                          <p className="text-sm font-bold text-green-900">Location Sharing Active</p>
-                          <p className="text-xs text-green-700">The couch can now see your live location</p>
+                          <p className="font-bold text-green-900">Location Tracking Active</p>
+                          <p className="text-xs text-green-700 mt-1">Using WiFi/Cell tower positioning (works indoors)</p>
+                          {lastLocationUpdate && (
+                            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                              <Clock size={12} />
+                              Last sent: {lastLocationUpdate.toLocaleTimeString()}
+                            </p>
+                          )}
                         </div>
-                        <button
-                          onClick={() => setLocationEnabled(false)}
-                          className="px-3 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200"
-                        >
-                          Stop
-                        </button>
                       </div>
-                      {lastLocationRef.current && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
-                          <p>Last update: {new Date().toLocaleTimeString()}</p>
-                          <p>Lat: {lastLocationRef.current.latitude.toFixed(6)}</p>
-                          <p>Lng: {lastLocationRef.current.longitude.toFixed(6)}</p>
+                      
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-xs text-blue-800 font-medium mb-2">
+                          📊 Tracking Info:
+                        </p>
+                        <ul className="text-xs text-blue-700 space-y-1 ml-4 list-disc">
+                          <li>Updates every {updateInterval / 1000} seconds (adaptive)</li>
+                          <li>Position shared with couch in real-time</li>
+                          <li>Keep screen unlocked for best results</li>
+                        </ul>
+                      </div>
+                      
+                      {platformInfo.isMobile && (
+                        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                          <p className="text-xs text-yellow-800">
+                            ⚠️ <strong>Mobile Note:</strong> Tracking stops when phone is locked or app is backgrounded (iOS limitation).
+                          </p>
                         </div>
                       )}
+                      
+                      <button
+                        onClick={() => {
+                          setLocationEnabled(false);
+                          setLastLocationUpdate(null);
+                          setDebugStatus('📍 Location sharing stopped');
+                          setTimeout(() => setDebugStatus(''), 2000);
+                        }}
+                        className="w-full py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition flex items-center justify-center gap-2"
+                      >
+                        <X size={20} />
+                        Stop Sharing Location
+                      </button>
                     </div>
                   )}
                 </div>
 
                 <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">Your Active Rides</h3>
-                  {activeRides.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">No active rides assigned</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {activeRides.map(ride => (
-                        <div key={ride.id} className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 border-2 border-blue-200">
-                          <div className="flex justify-between items-start mb-3">
-                            <div>
-                              <p className="font-bold text-gray-900 text-lg">{ride.patronName}</p>
-                              <a href={`tel:${ride.phone}`} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                                <Phone size={14} />
-                                {ride.phone}
-                              </a>
-                            </div>
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-500 text-white">
-                              {ride.riders} {ride.riders === 1 ? 'RIDER' : 'RIDERS'}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="bg-white rounded-lg p-3 border border-green-300">
-                              <p className="text-xs font-semibold text-green-700 mb-1">📍 PICKUP</p>
-                              <p className="text-sm font-medium text-gray-900">{ride.pickup}</p>
-                            </div>
-                            {(ride.dropoffs || [ride.dropoff]).map((dropoff, idx) => (
-                              <div key={idx} className="bg-white rounded-lg p-3 border border-red-300">
-                                <p className="text-xs font-semibold text-red-700 mb-1">
-                                  🎯 DROPOFF {(ride.dropoffs || [ride.dropoff]).length > 1 ? idx + 1 : ''}
-                                </p>
-                                <p className="text-sm font-medium text-gray-900">{dropoff}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                  <div className="bg-[#79F200] p-4">
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <MessageSquare size={20} />
-                      Messages with Couch
-                    </h3>
-                  </div>
-
-                  <div className="h-96 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <MessageSquare size={20} />
+                    Messages with Couch
+                  </h3>
+                  
+                  <div className="h-80 overflow-y-auto mb-4 space-y-3 p-4 bg-gray-50 rounded-xl">
                     {messages.length === 0 ? (
                       <p className="text-center text-gray-500 py-8">No messages yet</p>
                     ) : (
@@ -1243,9 +1339,9 @@ const CouchNavigator = () => {
                             }`}
                           >
                             <p className="text-xs font-semibold mb-1 opacity-70">
-                              {msg.sender === 'navigator' ? '🧭 You' : '🛋️ Couch'} - {msg.senderName}
+                              {msg.sender === 'navigator' ? 'You (Navigator)' : msg.senderName}
                             </p>
-                            <p className="text-sm break-words">{msg.message}</p>
+                            <p className="text-sm">{msg.message}</p>
                             <p className="text-xs opacity-60 mt-1">
                               {msg.timestamp?.toLocaleTimeString()}
                             </p>
@@ -1256,64 +1352,26 @@ const CouchNavigator = () => {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <div className="p-4 bg-white border-t border-gray-200">
-                    {debugStatus && (
-                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 text-center">
-                        {debugStatus}
-                      </div>
-                    )}
-                    
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !sendingMessage) {
-                            e.preventDefault();
-                            sendMessage();
-                          }
-                        }}
-                        placeholder="Type a message..."
-                        disabled={sendingMessage}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-lg disabled:bg-gray-100 disabled:cursor-not-allowed"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('🖱️ Navigator send button clicked');
-                          sendMessage();
-                        }}
-                        onTouchEnd={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          console.log('👆 Navigator send button touched');
-                          sendMessage();
-                        }}
-                        disabled={!newMessage.trim() || sendingMessage}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        {sendingMessage ? (
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <Send size={18} />
-                        )}
-                      </button>
-                    </div>
-                    
-                    {showDebug && (
-                      <button
-                        onClick={() => {
-                          console.log('Navigator test button clicked!');
-                          alert('Navigator button works! Check console.');
-                        }}
-                        className="w-full mt-2 p-2 bg-purple-500 text-white rounded text-sm"
-                      >
-                        🧪 Test Touch (should show alert)
-                      </button>
-                    )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      placeholder="Type a message..."
+                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={sendingMessage || !newMessage.trim()}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {sendingMessage ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Send size={18} />
+                      )}
+                    </button>
                   </div>
                 </div>
               </>
