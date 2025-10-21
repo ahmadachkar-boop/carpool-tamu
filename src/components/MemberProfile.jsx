@@ -40,7 +40,6 @@ const MemberProfile = () => {
         city: userProfile.city || '',
         state: userProfile.state || '',
         zip: userProfile.zip || '',
-        carInfo: userProfile.carInfo || '',
         dietaryRestrictions: userProfile.dietaryRestrictions || '',
         emergencyContact: userProfile.emergencyContact || '',
         emergencyPhone: userProfile.emergencyPhone || '',
@@ -139,7 +138,6 @@ const MemberProfile = () => {
       city: userProfile.city || '',
       state: userProfile.state || '',
       zip: userProfile.zip || '',
-      carInfo: userProfile.carInfo || '',
       dietaryRestrictions: userProfile.dietaryRestrictions || '',
       emergencyContact: userProfile.emergencyContact || '',
       emergencyPhone: userProfile.emergencyPhone || '',
@@ -435,38 +433,29 @@ const MemberProfile = () => {
           </div>
 
           {/* Additional Information */}
-          <div>
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h4>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Car Information</label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={formData.carInfo}
-                    onChange={(e) => setFormData({...formData, carInfo: e.target.value})}
-                    placeholder="Make, Model, Color"
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200]"
-                  />
-                ) : (
-                  <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-xl">{formData.carInfo || 'Not set'}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
-                {isEditing ? (
-                  <textarea
-                    value={formData.dietaryRestrictions}
-                    onChange={(e) => setFormData({...formData, dietaryRestrictions: e.target.value})}
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] min-h-[80px]"
-                  />
-                ) : (
-                  <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-xl">{formData.dietaryRestrictions || 'None'}</p>
-                )}
-              </div>
-            </div>
-          </div>
+<div>
+  <h4 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h4>
+  <div className="grid grid-cols-1 gap-4">
+    {/* REMOVE the Car Information field entirely */}
+    
+    <div>
+      <label className="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
+      {isEditing ? (
+        <textarea
+          value={formData.dietaryRestrictions}
+          onChange={(e) => setFormData({...formData, dietaryRestrictions: e.target.value})}
+          rows="2"
+          placeholder="e.g., Vegetarian, Gluten-free, Nut allergy"
+          className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] resize-none"
+        />
+      ) : (
+        <p className="text-gray-900 bg-gray-50 px-4 py-2 rounded-xl min-h-[44px]">
+          {formData.dietaryRestrictions || 'Not set'}
+        </p>
+      )}
+    </div>
+  </div>
+</div>
         </div>
       </div>
 
