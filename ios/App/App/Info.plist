@@ -45,5 +45,16 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Carpool needs your location to share your position with the dispatcher and help coordinate pickups.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Carpool needs your location even when the app is in the background to provide continuous tracking during rides.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>NSUserNotificationsUsageDescription</key>
+<string>Carpool needs notifications to alert you of new messages from the couch/navigator in real-time.</string>
 </dict>
 </plist>
+

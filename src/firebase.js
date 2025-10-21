@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
-import { setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBI87gFec1mUSEYTqST5C_fQ2b5CGchC3A",
@@ -13,21 +13,34 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
 
-setPersistence(auth, browserLocalPersistence)
-  .then(() => console.log('✅ Auth persistence enabled'))
-  .catch((error) => console.error('❌ Auth persistence error:', error));
-
-enableIndexedDbPersistence(db, {
-  synchronizeTabs: true
-})
-  .then(() => console.log('✅ Firestore offline enabled'))
-  .catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Persistence not available');
-    }
+// Initialize Auth differently for native vs web
+let auth;
+if (Capacitor.isNativePlatform()) {
+  // Native platform (iOS/Android) - use initializeAuth to avoid popup/redirect issues
+  console.log('🔧 Initializing Firebase Auth for Native platform');
+  auth = initializeAuth(app, {
+    persistence: indexedDBLocalPersistence
   });
+} else {
+  // Web platform - use standard getAuth
+  console.log('🔧 Initializing Firebase Auth for Web platform');
+  auth = getAuth(app);
+}
+
+// Initialize Firestore with new cache API (works on both platforms)
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentSingleTabManager()
+    })
+  });
+  console.log('✅ Firestore initialized with persistent cache');
+} catch (error) {
+  // Fallback if already initialized
+  console.log('⚠️ Firestore already initialized, using existing instance');
+  db = getFirestore(app);
+}
+
+export { auth, db };

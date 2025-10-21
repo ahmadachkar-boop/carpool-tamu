@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.carpool',
+  appId: 'web.app.carpool-tamu-2466c',
   appName: 'Carpool Internal',
   webDir: 'build'
 };

@@ -3,7 +3,8 @@ import {
   requestNativeLocationPermission, 
   getNativePosition, 
   watchNativePosition,
-  clearNativeWatch 
+  clearNativeWatch,
+  requestAlwaysLocationPermission  // Add this
 } from '../capacitorUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
@@ -13,8 +14,20 @@ import { useAuth } from '../AuthContext';
 import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff, X } from 'lucide-react';
 import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
+import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission } from '../notificationUtils';
+import { Capacitor } from '@capacitor/core';
+
 
 const CouchNavigator = () => {
+  // Log platform info on load
+  useEffect(() => {
+    console.log('🔔 Platform check:', {
+      isNativeApp,
+      capacitorPlatform: Capacitor.getPlatform(),
+      capacitorNative: Capacitor.isNativePlatform()
+    });
+  }, []);
+  
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
   const { isLoaded: googleMapsLoaded, loadError: googleMapsError } = useGoogleMaps();
@@ -39,7 +52,6 @@ const CouchNavigator = () => {
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const lastMessageCountRef = useRef(0);
-  const notificationAudioRef = useRef(null);
   const lastLocationRef = useRef(null);
   const locationUpdateTimerRef = useRef(null);
 
@@ -71,35 +83,9 @@ const CouchNavigator = () => {
   }, []);
 
   // Initialize notification sound
-  useEffect(() => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    notificationAudioRef.current = audioContext;
-  }, []);
+ 
 
-  // Play notification sound
-  const playNotificationSound = () => {
-    if (!notificationAudioRef.current) return;
-    
-    try {
-      const audioContext = notificationAudioRef.current;
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.5);
-    } catch (error) {
-      console.error('Error playing notification sound:', error);
-    }
-  };
+ 
 
   const mapContainerStyle = {
     width: '100%',
@@ -116,63 +102,88 @@ const CouchNavigator = () => {
   };
 
   const onMapLoad = (map) => {
-    mapRef.current = map;
-  };
+  console.log('🗺️ Map loaded!');
+  mapRef.current = map;
+  // Force markers to be added after map is ready
+  setCarLocations(prev => ({...prev})); // Triggers the marker effect
+};
 
-  // Update markers when car locations change - FIXED to use standard Marker
-  useEffect(() => {
-    if (!mapRef.current || !googleMapsLoaded) return;
+// Update markers when car locations change - FIXED race condition
+useEffect(() => {
+  console.log('🗺️ Marker update triggered:', {
+    hasMap: !!mapRef.current,
+    googleMapsLoaded,
+    carLocationsCount: Object.keys(carLocations).length,
+    carLocations
+  });
 
-    // Clear existing markers
-    Object.values(markersRef.current).forEach(marker => {
-      if (marker && marker.setMap) {
-        marker.setMap(null);
+  // Wait for both map AND Google Maps to be ready
+  if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.Marker) {
+    console.log('⏭️ Not ready yet:', {
+      hasMap: !!mapRef.current,
+      googleMapsLoaded,
+      hasGoogleMarker: !!window.google?.maps?.Marker
+    });
+    return;
+  }
+
+  console.log('🧹 Clearing', Object.keys(markersRef.current).length, 'existing markers');
+  
+  // Clear existing markers
+  Object.values(markersRef.current).forEach(marker => {
+    if (marker && marker.setMap) {
+      marker.setMap(null);
+    }
+  });
+  markersRef.current = {};
+
+  // Add new markers
+  // Add new markers
+Object.entries(carLocations).forEach(([carNum, location]) => {
+  console.log(`📍 Processing car ${carNum}:`, location);
+  
+  if (!location.latitude || !location.longitude) {
+    console.log(`⏭️ Car ${carNum} missing coordinates`);
+    return;
+  }
+
+  try {
+    // Use location.carNumber instead of carNum from the key
+    const actualCarNumber = location.carNumber || parseInt(carNum, 10);
+    console.log(`🎯 Creating marker for car ${actualCarNumber} at`, location.latitude, location.longitude);
+    
+    const marker = new window.google.maps.Marker({
+      map: mapRef.current,
+      position: {
+        lat: location.latitude,
+        lng: location.longitude
+      },
+      title: `Car ${actualCarNumber}`,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 10,
+        fillColor: '#4285F4',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2
+      },
+      label: {
+        text: String(actualCarNumber), // Use actualCarNumber here
+        color: '#ffffff',
+        fontSize: '12px',
+        fontWeight: 'bold'
       }
     });
-    markersRef.current = {};
 
-    // Add new markers using standard Marker (not AdvancedMarkerElement)
-    Object.entries(carLocations).forEach(([carNum, location]) => {
-      if (!location.latitude || !location.longitude) return;
+    markersRef.current[actualCarNumber] = marker; // Use actualCarNumber as key too
+    console.log(`✅ Marker created for car ${actualCarNumber}`);
+  } catch (error) {
+    console.error(`❌ Error creating marker for car ${carNum}:`, error);
+  }
+});
 
-      try {
-        const marker = new window.google.maps.Marker({
-          map: mapRef.current,
-          position: {
-            lat: location.latitude,
-            lng: location.longitude
-          },
-          title: `Car ${carNum}`,
-          icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: '#4285F4',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 2
-          },
-          label: {
-            text: String(carNum),
-            color: '#ffffff',
-            fontSize: '12px',
-            fontWeight: 'bold'
-          }
-        });
-
-        markersRef.current[carNum] = marker;
-      } catch (error) {
-        console.error('Error creating marker:', error);
-      }
-    });
-
-    return () => {
-      Object.values(markersRef.current).forEach(marker => {
-        if (marker && marker.setMap) {
-          marker.setMap(null);
-        }
-      });
-    };
-  }, [carLocations, googleMapsLoaded]);
+  console.log('✅ Total markers now:', Object.keys(markersRef.current).length);
+}, [carLocations, googleMapsLoaded]); // Dependencies stay the same
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -230,74 +241,67 @@ const CouchNavigator = () => {
     );
 
     const unsubscribe = onSnapshot(
-      messagesQuery,
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        if (snapshot.metadata.hasPendingWrites) {
-          console.log('📝 Skipping pending writes...');
-          return;
-        }
+  messagesQuery,
+  { includeMetadataChanges: true },
+  async (snapshot) => {  // ← Add 'async' here
+    if (snapshot.metadata.hasPendingWrites) {
+      console.log('📝 Skipping pending writes...');
+      return;
+    }
 
-        console.log('📨 Message snapshot received:', {
-          numDocs: snapshot.docs.length,
-          fromCache: snapshot.metadata.fromCache,
-          viewMode,
-          carNumber: carNum
-        });
+    console.log('📨 Message snapshot received:', {
+      numDocs: snapshot.docs.length,
+      fromCache: snapshot.metadata.fromCache,
+      viewMode,
+      carNumber: carNum
+    });
+    
+    const msgs = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        timestamp: data.timestamp?.toDate()
+      };
+    });
+    
+    console.log('Processed messages:', msgs.length);
+    
+    // Play notification sound and show notification if new message received
+    if (lastMessageCountRef.current > 0 && msgs.length > lastMessageCountRef.current) {
+      const newMessage = msgs[msgs.length - 1];
+      const isFromOtherParty = (viewMode === 'couch' && newMessage.sender === 'navigator') ||
+                                (viewMode === 'navigator' && newMessage.sender === 'couch');
+      
+      if (isFromOtherParty) {
+        playNotificationSound();
         
-        const msgs = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            timestamp: data.timestamp?.toDate()
-          };
-        });
-        
-        console.log('Processed messages:', msgs.length);
-        
-        // Play notification sound if new message received
-        if (lastMessageCountRef.current > 0 && msgs.length > lastMessageCountRef.current) {
-          const newMessage = msgs[msgs.length - 1];
-          const isFromOtherParty = (viewMode === 'couch' && newMessage.sender === 'navigator') ||
-                                    (viewMode === 'navigator' && newMessage.sender === 'couch');
-          
-          if (isFromOtherParty) {
-            playNotificationSound();
-            
-            if (notificationsEnabled && document.hidden) {
-              try {
-                new Notification('New Message', {
-                  body: `${newMessage.senderName}: ${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}`,
-                  icon: '/logo192.png',
-                  tag: `message-${newMessage.id}`,
-                  requireInteraction: false,
-                  silent: false
-                });
-              } catch (error) {
-                console.error('Error showing notification:', error);
-              }
-            }
-          }
-        }
-        
-        lastMessageCountRef.current = msgs.length;
-        setMessages(msgs);
-      },
-      (error) => {
-        console.error('❌ Message listener error:', error);
-        
-        if (error.code === 'failed-precondition') {
-          console.error('🔴 FIRESTORE INDEX REQUIRED!');
-          setDebugStatus('❌ Database index missing');
-        } else if (error.code === 'unavailable') {
-          console.error('🔴 Network unavailable');
-          setDebugStatus('❌ Network error');
-        } else {
-          setDebugStatus(`❌ Error: ${error.message}`);
+        if (notificationsEnabled && document.hidden) {
+          await showNotification(
+            'New Message',
+            `${newMessage.senderName}: ${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}`
+          );
         }
       }
-    );
+    }
+    
+    lastMessageCountRef.current = msgs.length;
+    setMessages(msgs);
+  },
+  (error) => {
+    console.error('❌ Message listener error:', error);
+    
+    if (error.code === 'failed-precondition') {
+      console.error('🔴 FIRESTORE INDEX REQUIRED!');
+      setDebugStatus('❌ Database index missing');
+    } else if (error.code === 'unavailable') {
+      console.error('🔴 Network unavailable');
+      setDebugStatus('❌ Network error');
+    } else {
+      setDebugStatus(`❌ Error: ${error.message}`);
+    }
+  }
+);
 
     return () => {
       console.log('🔴 Cleaning up message listener for car:', carNum);
@@ -790,32 +794,6 @@ useEffect(() => {
     setDebugStatus('❌ Location failed');
   };
 
-  const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      alert('Notifications not supported');
-      return false;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      const granted = permission === 'granted';
-      setNotificationsEnabled(granted);
-      
-      if (granted) {
-        new Notification('Notifications Enabled', {
-          body: 'You will now receive message updates',
-          icon: '/logo192.png',
-          tag: 'test-notification'
-        });
-      }
-      
-      return granted;
-    } catch (error) {
-      console.error('Notification error:', error);
-      return false;
-    }
-  };
-
   // Send message with proper integer conversion
   const sendMessage = async () => {
     if (!newMessage.trim()) {
@@ -909,65 +887,78 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {platformInfo.isMobile && !platformInfo.isPWA && (
-        <div className="bg-blue-600 text-white p-3 text-center text-sm">
-          📱 For best experience, add this app to your home screen
-        </div>
-      )}
 
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <MessageSquare size={24} className="text-[#79F200]" />
-              Couch Navigator
-            </h1>
-            <div className="flex gap-2 items-center">
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition text-xs"
-                title="Toggle debug"
-              >
-                🐛
-              </button>
-              
-              <button
-                onClick={requestNotificationPermission}
-                className={`p-2 rounded-lg transition ${
-                  notificationsEnabled
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('couch');
-                  setLocationEnabled(false);
-                }}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                  viewMode === 'couch'
-                    ? 'bg-[#79F200] text-gray-900'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                🛋️ Couch
-              </button>
-              <button
-                onClick={() => setViewMode('navigator')}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                  viewMode === 'navigator'
-                    ? 'bg-[#79F200] text-gray-900'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                🧭 Navigator
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+     <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6 mb-6">
+  <div className="flex flex-col gap-3 mb-4">
+    {/* Title */}
+    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+      Couch Navigator
+    </h1>
+    
+    {/* All buttons in a row that wraps on mobile */}
+    <div className="flex flex-wrap gap-2">
+      {/* View mode buttons */}
+      <button
+        onClick={() => setViewMode('couch')}
+        className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
+          viewMode === 'couch'
+            ? 'bg-[#79F200] text-gray-900'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        }`}
+      >
+        🛋️ Couch
+      </button>
+      <button
+        onClick={() => setViewMode('navigator')}
+        className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
+          viewMode === 'navigator'
+            ? 'bg-[#79F200] text-gray-900'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        }`}
+      >
+        🧭 Navigator
+      </button>
+      
+      {/* Notifications toggle */}
+<button
+  onClick={async () => {
+    if (!notificationsEnabled) {
+      console.log('📱 Requesting notification permission...');
+      const granted = await requestNotificationPermission();
+      console.log('📱 Permission granted:', granted);
+      
+      setNotificationsEnabled(granted);
+      
+      if (granted) {
+        await showNotification('Notifications Enabled', 'You will now receive message updates');
+      } else {
+        alert('Notification permission was denied. Please enable notifications in iOS Settings → Carpool Internal → Notifications');
+      }
+    } else {
+      setNotificationsEnabled(false);
+      console.log('📱 Notifications disabled');
+    }
+  }}
+  className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap flex items-center gap-2 ${
+    notificationsEnabled
+      ? 'bg-blue-600 text-white'
+      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+  }`}
+>
+  {notificationsEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+  <span className="hidden sm:inline">Notifications</span>
+</button>
+      
+      {/* Debug toggle */}
+      <button
+        onClick={() => setShowDebug(!showDebug)}
+        className="px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm bg-gray-800 text-white hover:bg-gray-700 transition whitespace-nowrap"
+      >
+        🔍 Debug
+      </button>
+    </div>
+  </div>
+</div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {showDebug && (
@@ -1235,19 +1226,7 @@ useEffect(() => {
 
             {selectedCar && (
               <>
-                {platformInfo.isMobile && (
-                  <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-4">
-                    <p className="text-sm text-yellow-800 font-medium">
-                      ⚠️ <strong>Important:</strong> Location tracking will stop when you lock your phone or switch apps. 
-                      {!platformInfo.isPWA && ' For better tracking, add this app to your home screen.'}
-                    </p>
-                    {platformInfo.isIOS && (
-                      <p className="text-xs text-yellow-700 mt-2">
-                        📱 <strong>iOS Note:</strong> If location isn't working, go to Settings → Privacy & Security → Location Services → Safari Websites → Allow
-                      </p>
-                    )}
-                  </div>
-                )}
+                
 
                 <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -1353,24 +1332,35 @@ useEffect(() => {
                         </div>
                       </div>
                       
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-xs text-blue-800 font-medium mb-2">
-                          📊 Tracking Info:
-                        </p>
-                        <ul className="text-xs text-blue-700 space-y-1 ml-4 list-disc">
-                          <li>Updates every {updateInterval / 1000} seconds (adaptive)</li>
-                          <li>Position shared with couch in real-time</li>
-                          <li>Keep screen unlocked for best results</li>
-                        </ul>
-                      </div>
+                     {/* Button to request Always permission for background tracking */}
+{isNativeApp && (
+  <div className="bg-purple-50 border-2 border-purple-400 rounded-lg p-4">
+    <p className="text-sm text-purple-900 font-bold mb-2">
+      🔄 Enable Background Tracking (Optional)
+    </p>
+    <p className="text-xs text-purple-800 mb-3">
+      For continuous location updates even when the app is in the background, enable "Always Allow" permission.
+    </p>
+    <button
+      onClick={async () => {
+        console.log('🔄 Requesting Always permission...');
+        const result = await requestAlwaysLocationPermission();
+        
+        if (result.success) {
+          alert('✅ Background tracking enabled!\n\nYour location will now be tracked even when the app is in the background.');
+        } else {
+          alert('ℹ️ To enable background tracking:\n\n1. Open iPhone Settings\n2. Find "Carpool Internal"\n3. Tap Location\n4. Select "Always"\n\nNote: iOS only shows this option after you\'ve used the app for a while.');
+        }
+      }}
+      className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition flex items-center justify-center gap-2"
+    >
+      <Navigation size={20} />
+      Enable Background Tracking
+    </button>
+  </div>
+)}
                       
-                      {platformInfo.isMobile && (
-                        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
-                          <p className="text-xs text-yellow-800">
-                            ⚠️ <strong>Mobile Note:</strong> Tracking stops when phone is locked or app is backgrounded (iOS limitation).
-                          </p>
-                        </div>
-                      )}
+                      
                       
                       <button
                         onClick={() => {
