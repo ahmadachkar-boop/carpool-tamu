@@ -185,160 +185,7 @@ const MessagesDisplay = memo(({ messages, messagesEndRef, viewMode }) => {
 MessagesDisplay.displayName = 'MessagesDisplay';
 
 const CouchNavigator = () => {
-  useEffect(() => {
-    console.log('🔔 Platform check:', {
-      isNativeApp,
-      capacitorPlatform: Capacitor.getPlatform(),
-      capacitorNative: Capacitor.isNativePlatform()
-    });
-  }, []);
-
-  // Auto-sync queued messages function
-  const syncMessages = async () => {
-    if (!activeNDR || isSyncInProgress()) {
-      return;
-    }
-
-    setIsSyncing(true);
-    console.log('🔄 Starting auto-sync...');
-
-    try {
-      const result = await syncQueuedMessages(async (messageData) => {
-        // Send queued message to Firestore
-        await addDoc(collection(db, 'couchMessages'), messageData);
-      });
-
-      if (result.synced > 0) {
-        setDebugStatus(`✅ Synced ${result.synced} message(s)`);
-        hapticSuccess();
-        console.log(`✅ Successfully synced ${result.synced} messages`);
-      }
-
-      if (result.failed > 0) {
-        setDebugStatus(`⚠️ ${result.failed} message(s) failed to sync`);
-        console.warn(`⚠️ ${result.failed} messages failed to sync`);
-      }
-
-      // Update queue count
-      setQueuedMessagesCount(getMessageQueue().length);
-      setLastSyncTime(new Date());
-
-      setTimeout(() => setDebugStatus(''), 3000);
-    } catch (error) {
-      console.error('❌ Sync error:', error);
-      setDebugStatus('❌ Sync failed');
-      setTimeout(() => setDebugStatus(''), 3000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Connection status monitoring
-  useEffect(() => {
-    const syncOnReconnect = async () => {
-      if (!activeNDR) return;
-
-      try {
-        const queueLength = getMessageQueue().length;
-        if (queueLength > 0) {
-          console.log('🔄 Auto-syncing queued messages...');
-          await syncMessages();
-        }
-      } catch (error) {
-        console.error('Error in syncOnReconnect:', error);
-      }
-    };
-
-    const unsubscribeConnection = addConnectionListener((online) => {
-      try {
-        setIsOnline(online);
-        if (online) {
-          console.log('🟢 Back online - checking for queued messages');
-          const queueLength = getMessageQueue().length;
-          setQueuedMessagesCount(queueLength);
-
-          // Auto-sync when connection restored
-          setTimeout(() => syncOnReconnect(), 1000); // Small delay to ensure Firestore is ready
-        }
-      } catch (error) {
-        console.error('Error in connection listener:', error);
-      }
-    });
-
-    const unsubscribeFirestore = addFirestoreConnectionListener((connected) => {
-      try {
-        setFirestoreConnectionState(connected);
-      } catch (error) {
-        console.error('Error in Firestore connection listener:', error);
-      }
-    });
-
-    // Initial queue check
-    try {
-      setQueuedMessagesCount(getMessageQueue().length);
-    } catch (error) {
-      console.error('Error checking initial queue:', error);
-    }
-
-    // Register sync callback for app resume
-    try {
-      setSyncCallback(() => {
-        if (activeNDR && activeNDR.id) {
-          syncMessages();
-        }
-      });
-    } catch (error) {
-      console.error('Error setting sync callback:', error);
-    }
-
-    return () => {
-      try {
-        if (unsubscribeConnection && typeof unsubscribeConnection === 'function') {
-          unsubscribeConnection();
-        }
-        if (unsubscribeFirestore && typeof unsubscribeFirestore === 'function') {
-          unsubscribeFirestore();
-        }
-      } catch (error) {
-        console.error('Error cleaning up connection monitoring:', error);
-      }
-    };
-  }, [activeNDR]);
-
-  // App resume detection
-  useEffect(() => {
-    const unsubscribeResume = addAppResumeListener(() => {
-      try {
-        console.log('📱 App resumed - reconnecting...');
-
-        // Update queue count
-        setQueuedMessagesCount(getMessageQueue().length);
-
-        // Load cached location if available
-        const cachedLoc = getCachedLocation();
-        if (cachedLoc && selectedCar && locationEnabled) {
-          console.log('📍 Using cached location from resume');
-          setCarLocations(prev => ({
-            ...prev,
-            [selectedCar]: cachedLoc
-          }));
-        }
-      } catch (error) {
-        console.error('Error in app resume handler:', error);
-      }
-    });
-
-    return () => {
-      try {
-        if (unsubscribeResume && typeof unsubscribeResume === 'function') {
-          unsubscribeResume();
-        }
-      } catch (error) {
-        console.error('Error cleaning up app resume listener:', error);
-      }
-    };
-  }, [selectedCar, locationEnabled]);
-
+  // ===== HOOKS MUST BE DECLARED FIRST =====
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
   const { isLoaded: googleMapsLoaded, loadError: googleMapsError } = useGoogleMaps();
@@ -596,7 +443,7 @@ const CouchNavigator = () => {
 
   const centerMapOnCar = (carNum) => {
     if (!mapRef.current || !carLocations[carNum]) return;
-    
+
     const location = carLocations[carNum];
     mapRef.current.panTo({
       lat: location.latitude,
@@ -604,6 +451,163 @@ const CouchNavigator = () => {
     });
     mapRef.current.setZoom(16);
   };
+
+  // Auto-sync queued messages function
+  const syncMessages = async () => {
+    if (!activeNDR || isSyncInProgress()) {
+      return;
+    }
+
+    setIsSyncing(true);
+    console.log('🔄 Starting auto-sync...');
+
+    try {
+      const result = await syncQueuedMessages(async (messageData) => {
+        // Send queued message to Firestore
+        await addDoc(collection(db, 'couchMessages'), messageData);
+      });
+
+      if (result.synced > 0) {
+        setDebugStatus(`✅ Synced ${result.synced} message(s)`);
+        hapticSuccess();
+        console.log(`✅ Successfully synced ${result.synced} messages`);
+      }
+
+      if (result.failed > 0) {
+        setDebugStatus(`⚠️ ${result.failed} message(s) failed to sync`);
+        console.warn(`⚠️ ${result.failed} messages failed to sync`);
+      }
+
+      // Update queue count
+      setQueuedMessagesCount(getMessageQueue().length);
+      setLastSyncTime(new Date());
+
+      setTimeout(() => setDebugStatus(''), 3000);
+    } catch (error) {
+      console.error('❌ Sync error:', error);
+      setDebugStatus('❌ Sync failed');
+      setTimeout(() => setDebugStatus(''), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ===== EFFECTS =====
+
+  // Platform check
+  useEffect(() => {
+    console.log('🔔 Platform check:', {
+      isNativeApp,
+      capacitorPlatform: Capacitor.getPlatform(),
+      capacitorNative: Capacitor.isNativePlatform()
+    });
+  }, []);
+
+  // Connection status monitoring
+  useEffect(() => {
+    const syncOnReconnect = async () => {
+      if (!activeNDR) return;
+
+      try {
+        const queueLength = getMessageQueue().length;
+        if (queueLength > 0) {
+          console.log('🔄 Auto-syncing queued messages...');
+          await syncMessages();
+        }
+      } catch (error) {
+        console.error('Error in syncOnReconnect:', error);
+      }
+    };
+
+    const unsubscribeConnection = addConnectionListener((online) => {
+      try {
+        setIsOnline(online);
+        if (online) {
+          console.log('🟢 Back online - checking for queued messages');
+          const queueLength = getMessageQueue().length;
+          setQueuedMessagesCount(queueLength);
+
+          // Auto-sync when connection restored
+          setTimeout(() => syncOnReconnect(), 1000); // Small delay to ensure Firestore is ready
+        }
+      } catch (error) {
+        console.error('Error in connection listener:', error);
+      }
+    });
+
+    const unsubscribeFirestore = addFirestoreConnectionListener((connected) => {
+      try {
+        setFirestoreConnectionState(connected);
+      } catch (error) {
+        console.error('Error in Firestore connection listener:', error);
+      }
+    });
+
+    // Initial queue check
+    try {
+      setQueuedMessagesCount(getMessageQueue().length);
+    } catch (error) {
+      console.error('Error checking initial queue:', error);
+    }
+
+    // Register sync callback for app resume
+    try {
+      setSyncCallback(() => {
+        if (activeNDR && activeNDR.id) {
+          syncMessages();
+        }
+      });
+    } catch (error) {
+      console.error('Error setting sync callback:', error);
+    }
+
+    return () => {
+      try {
+        if (unsubscribeConnection && typeof unsubscribeConnection === 'function') {
+          unsubscribeConnection();
+        }
+        if (unsubscribeFirestore && typeof unsubscribeFirestore === 'function') {
+          unsubscribeFirestore();
+        }
+      } catch (error) {
+        console.error('Error cleaning up connection monitoring:', error);
+      }
+    };
+  }, [activeNDR]);
+
+  // App resume detection
+  useEffect(() => {
+    const unsubscribeResume = addAppResumeListener(() => {
+      try {
+        console.log('📱 App resumed - reconnecting...');
+
+        // Update queue count
+        setQueuedMessagesCount(getMessageQueue().length);
+
+        // Load cached location if available
+        const cachedLoc = getCachedLocation();
+        if (cachedLoc && selectedCar && locationEnabled) {
+          console.log('📍 Using cached location from resume');
+          setCarLocations(prev => ({
+            ...prev,
+            [selectedCar]: cachedLoc
+          }));
+        }
+      } catch (error) {
+        console.error('Error in app resume handler:', error);
+      }
+    });
+
+    return () => {
+      try {
+        if (unsubscribeResume && typeof unsubscribeResume === 'function') {
+          unsubscribeResume();
+        }
+      } catch (error) {
+        console.error('Error cleaning up app resume listener:', error);
+      }
+    };
+  }, [selectedCar, locationEnabled]);
 
   // SEPARATE: Handle route rendering independently from markers
   useEffect(() => {
