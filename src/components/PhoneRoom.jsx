@@ -1165,6 +1165,8 @@ const PhoneRoom = () => {
               </label>
               <input
                 type="text"
+                inputMode="text"
+                autoComplete="name"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#79F200] focus:border-[#79F200] transition outline-none text-gray-900"
@@ -1179,6 +1181,8 @@ const PhoneRoom = () => {
               </label>
               <input
                 type="tel"
+                inputMode="tel"
+                autoComplete="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({...formData, phone: formatPhoneNumber(e.target.value)})}
                 maxLength="14"
@@ -1276,6 +1280,8 @@ const PhoneRoom = () => {
               </label>
               <input
                 type="text"
+                inputMode="text"
+                autoComplete="street-address"
                 value={formData.pickup}
                 onChange={(e) => handlePickupChange(e.target.value)}
                 onFocus={() => {
@@ -1439,6 +1445,7 @@ const PhoneRoom = () => {
               </label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="1"
                 max="10"
                 value={formData.riders}
