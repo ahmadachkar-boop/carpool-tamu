@@ -20,6 +20,7 @@ const API_RESET_INTERVAL_MS = 3600000; // 1 hour in milliseconds
 const LONG_WAIT_THRESHOLD_MINUTES = 15; // Minutes before wait is considered long
 const CLOCK_UPDATE_INTERVAL_MS = 1000; // Update clock every second
 const MAX_PENDING_RIDES_FOR_ETA = 3; // Only calculate ETA for top N pending rides
+const MAX_DETOUR_MINUTES = 15; // Max additional minutes for multi-ride pickup detour
 
 // Custom Modal Components (replaces alert/prompt/confirm)
 const Modal = ({ isOpen, onClose, title, children, actions }) => {
@@ -161,6 +162,10 @@ const RideManagement = () => {
 
   // NEW: Traffic info modal
   const [trafficModal, setTrafficModal] = useState({ isOpen: false, loading: false, data: null });
+
+  // NEW: Multi-ride pickup suggestions
+  const [multiRideSuggestions, setMultiRideSuggestions] = useState({}); // { pendingRideId: [{ activeRideId, detourMinutes }] }
+  const [checkingMultiRide, setCheckingMultiRide] = useState(false);
 
   // NEW: Reassignment modal
   const [reassigningRide, setReassigningRide] = useState(null);
@@ -423,6 +428,149 @@ const RideManagement = () => {
 
     return () => clearTimeout(timer);
   }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
+
+  // NEW: Check for multi-ride pickup opportunities
+  useEffect(() => {
+    if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0 || rides.active.length === 0) {
+      setMultiRideSuggestions({});
+      return;
+    }
+
+    const checkMultiRideOpportunities = async () => {
+      setCheckingMultiRide(true);
+
+      try {
+        const directionsService = new window.google.maps.DirectionsService();
+        const suggestions = {};
+
+        for (const pendingRide of rides.pending) {
+          const rideSuggestions = [];
+
+          for (const activeRide of rides.active) {
+            const location = carLocations[activeRide.carNumber];
+            if (!location || !location.latitude || !location.longitude) continue;
+
+            try {
+              // Calculate current route duration
+              const currentOrigin = { lat: location.latitude, lng: location.longitude };
+              const currentWaypoints = [];
+
+              // Add pickup if not yet picked up
+              if (!activeRide.pickedUpAt) {
+                currentWaypoints.push({ location: activeRide.pickup, stopover: true });
+              }
+
+              const currentDropoffs = activeRide.dropoffs || [activeRide.dropoff];
+              const currentFinalDropoff = currentDropoffs[currentDropoffs.length - 1];
+
+              // Add all dropoffs except the last one as waypoints
+              currentDropoffs.slice(0, -1).forEach(dropoff => {
+                currentWaypoints.push({ location: dropoff, stopover: true });
+              });
+
+              // Get current route duration
+              const currentRouteResult = await new Promise((resolve, reject) => {
+                directionsService.route(
+                  {
+                    origin: currentOrigin,
+                    destination: currentFinalDropoff,
+                    waypoints: currentWaypoints.length > 0 ? currentWaypoints : undefined,
+                    travelMode: window.google.maps.TravelMode.DRIVING,
+                    drivingOptions: {
+                      departureTime: new Date(),
+                      trafficModel: 'bestguess'
+                    }
+                  },
+                  (result, status) => {
+                    if (status === 'OK') resolve(result);
+                    else reject(status);
+                  }
+                );
+              });
+
+              let currentDuration = 0;
+              currentRouteResult.routes[0].legs.forEach(leg => {
+                const duration = leg.duration_in_traffic || leg.duration;
+                currentDuration += duration.value;
+              });
+
+              // Calculate new route with detour (pickup new patron, drop them off, then continue)
+              const newWaypoints = [...currentWaypoints];
+              newWaypoints.push({ location: pendingRide.pickup, stopover: true });
+
+              const pendingDropoffs = pendingRide.dropoffs || [pendingRide.dropoff];
+              pendingDropoffs.forEach(dropoff => {
+                newWaypoints.push({ location: dropoff, stopover: true });
+              });
+
+              const newRouteResult = await new Promise((resolve, reject) => {
+                directionsService.route(
+                  {
+                    origin: currentOrigin,
+                    destination: currentFinalDropoff,
+                    waypoints: newWaypoints,
+                    travelMode: window.google.maps.TravelMode.DRIVING,
+                    drivingOptions: {
+                      departureTime: new Date(),
+                      trafficModel: 'bestguess'
+                    }
+                  },
+                  (result, status) => {
+                    if (status === 'OK') resolve(result);
+                    else reject(status);
+                  }
+                );
+              });
+
+              let newDuration = 0;
+              newRouteResult.routes[0].legs.forEach(leg => {
+                const duration = leg.duration_in_traffic || leg.duration;
+                newDuration += duration.value;
+              });
+
+              const detourMinutes = Math.round((newDuration - currentDuration) / 60);
+
+              // If detour is acceptable, add as suggestion
+              if (detourMinutes <= MAX_DETOUR_MINUTES) {
+                rideSuggestions.push({
+                  activeRideId: activeRide.id,
+                  activeRidePatron: activeRide.patronName,
+                  carNumber: activeRide.carNumber,
+                  detourMinutes
+                });
+              }
+            } catch (error) {
+              logError('Multi-Ride Opportunity Check', error, {
+                pendingRideId: pendingRide.id,
+                activeRideId: activeRide.id
+              });
+            }
+          }
+
+          if (rideSuggestions.length > 0) {
+            // Sort by lowest detour time
+            rideSuggestions.sort((a, b) => a.detourMinutes - b.detourMinutes);
+            suggestions[pendingRide.id] = rideSuggestions;
+          }
+        }
+
+        if (isMounted.current) {
+          setMultiRideSuggestions(suggestions);
+        }
+      } catch (error) {
+        logError('Multi-Ride Opportunities', error);
+      } finally {
+        if (isMounted.current) {
+          setCheckingMultiRide(false);
+        }
+      }
+    };
+
+    // Debounce the check
+    const timer = setTimeout(checkMultiRideOpportunities, 10000); // Check every 10 seconds
+
+    return () => clearTimeout(timer);
+  }, [rides.pending, rides.active, carLocations, googleMapsLoaded, activeNDR]);
 
   // NEW: Update current time for timer displays
   useEffect(() => {
@@ -779,6 +927,75 @@ const RideManagement = () => {
         message: 'Error assigning car: ' + error.message
       });
     }
+  };
+
+  const assignToActiveRide = async (pendingRideId, activeRideId) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Combine Rides?',
+      message: 'This will add the pending patron to the active ride. The car will pick up and drop off both patrons.',
+      onConfirm: async () => {
+        try {
+          const pendingRideDoc = await getDoc(doc(db, 'rides', pendingRideId));
+          const activeRideDoc = await getDoc(doc(db, 'rides', activeRideId));
+
+          if (!pendingRideDoc.exists() || !activeRideDoc.exists()) {
+            setAlertModal({
+              isOpen: true,
+              title: 'Error',
+              message: 'One or both rides no longer exist.'
+            });
+            return;
+          }
+
+          const pendingRide = pendingRideDoc.data();
+          const activeRide = activeRideDoc.data();
+
+          // Combine the rides by updating the active ride's dropoffs array
+          const currentDropoffs = activeRide.dropoffs || [activeRide.dropoff];
+          const pendingDropoffs = pendingRide.dropoffs || [pendingRide.dropoff];
+
+          // Add pending ride's pickup and dropoffs to the active ride
+          // We'll add them at the end of the route
+          const updatedDropoffs = [...currentDropoffs, ...pendingDropoffs];
+
+          // Update active ride with new dropoffs and updated rider count
+          await updateDoc(doc(db, 'rides', activeRideId), {
+            dropoffs: updatedDropoffs,
+            riders: (activeRide.riders || 1) + (pendingRide.riders || 1),
+            // Store info about combined rides for reference
+            combinedRides: [...(activeRide.combinedRides || [activeRide.id]), pendingRideId],
+            patronNotes: activeRide.patronNotes
+              ? `${activeRide.patronNotes} | Combined with ${pendingRide.patronName} (${pendingRide.phone})`
+              : `Combined with ${pendingRide.patronName} (${pendingRide.phone})`
+          });
+
+          // Mark pending ride as completed/combined
+          await updateDoc(doc(db, 'rides', pendingRideId), {
+            status: 'combined',
+            combinedWithRideId: activeRideId,
+            completedAt: Timestamp.now()
+          });
+
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+
+          setSnackbar({
+            isOpen: true,
+            message: `Ride combined successfully. Car ${activeRide.carNumber} will now pick up both patrons.`,
+            type: 'success',
+            onUndo: null
+          });
+        } catch (error) {
+          logError('Assign to Active Ride', error, { pendingRideId, activeRideId });
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+          setAlertModal({
+            isOpen: true,
+            title: 'Error',
+            message: 'Error combining rides: ' + error.message
+          });
+        }
+      }
+    });
   };
 
   const startRide = async (rideId) => {
@@ -1724,6 +1941,39 @@ const RideManagement = () => {
                               <span className="font-semibold">Terminated:</span> {ride.terminationReason}
                             </p>
                           )}
+                        </div>
+                      )}
+
+                      {/* MULTI-RIDE SUGGESTIONS */}
+                      {activeTab === 'pending' && multiRideSuggestions[ride.id] && multiRideSuggestions[ride.id].length > 0 && (
+                        <div className="mb-3 p-3 bg-green-50 border-2 border-green-300 rounded-lg">
+                          <h4 className="font-bold text-green-900 text-sm mb-2 flex items-center gap-2">
+                            <Users size={16} />
+                            Multi-Ride Opportunities ({multiRideSuggestions[ride.id].length})
+                          </h4>
+                          <p className="text-xs text-green-700 mb-2">
+                            This ride can be combined with an active ride for efficiency:
+                          </p>
+                          <div className="space-y-2">
+                            {multiRideSuggestions[ride.id].map((suggestion, idx) => (
+                              <div key={idx} className="bg-white border border-green-300 rounded p-2 flex justify-between items-center gap-2">
+                                <div className="flex-1">
+                                  <p className="text-xs font-semibold text-gray-900">
+                                    Car {suggestion.carNumber} - {suggestion.activeRidePatron}
+                                  </p>
+                                  <p className="text-xs text-gray-600">
+                                    +{suggestion.detourMinutes} min detour
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => assignToActiveRide(ride.id, suggestion.activeRideId)}
+                                  className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-xs font-semibold min-h-touch touch-manipulation"
+                                >
+                                  Combine
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
