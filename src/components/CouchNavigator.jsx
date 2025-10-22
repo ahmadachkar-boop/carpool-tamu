@@ -1595,7 +1595,7 @@ const CouchNavigator = () => {
                                 if (result.message) {
                                   setTimeout(() => {
                                     const instructions = getIOSSettingsInstructions();
-                                    if (confirm('📍 Background Location Setup\n\n' + instructions.alwaysLocation + '\n\nWould you like to open Settings now?')) {
+                                    if (window.confirm('📍 Background Location Setup\n\n' + instructions.alwaysLocation + '\n\nWould you like to open Settings now?')) {
                                       // iOS will open Settings app if available
                                       window.open('app-settings:');
                                     }
