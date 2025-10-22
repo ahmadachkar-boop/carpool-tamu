@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, onSnapshot, doc, getDoc, updateDoc, orderBy, Timestamp, getDocs, where, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../AuthContext';
-import { Play, Printer, FileText, Users, Car, ClipboardList, Archive, RotateCcw, GripVertical, Clock, AlertTriangle } from 'lucide-react';
+import { Play, Printer, FileText, Users, Car, ClipboardList, Archive, RotateCcw, GripVertical, Clock, AlertTriangle, Save, CheckCircle } from 'lucide-react';
 
 const NDRReports = () => {
   const [ndrs, setNdrs] = useState([]);
@@ -463,7 +463,9 @@ const NDRDetail = ({ ndr, onBack }) => {
   const [showPrintAgreements, setShowPrintAgreements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [availableCars, setAvailableCars] = useState(ndr.availableCars || 0);
-  
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+
   const [assignments, setAssignments] = useState(ndr.assignments || {
     cars: {},
     couch: [],
@@ -539,7 +541,7 @@ const NDRDetail = ({ ndr, onBack }) => {
 
   const saveData = async () => {
     if (!isActive) return;
-    
+
     try {
       await updateDoc(doc(db, 'ndrs', ndr.id), {
         assignments,
@@ -550,6 +552,28 @@ const NDRDetail = ({ ndr, onBack }) => {
       });
     } catch (error) {
       console.error('Error saving NDR data:', error);
+    }
+  };
+
+  const manualSave = async () => {
+    if (!isActive) return;
+
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, 'ndrs', ndr.id), {
+        assignments,
+        cars,
+        notes,
+        availableCars,
+        lastUpdated: Timestamp.now()
+      });
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error('Error saving NDR data:', error);
+      alert('Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -663,6 +687,35 @@ const NDRDetail = ({ ndr, onBack }) => {
             </div>
 
             <div className="p-6">
+              {/* Save Button and Success Message */}
+              {isActive && activeTab !== 'home' && (
+                <div className="mb-4 flex items-center gap-3">
+                  <button
+                    onClick={manualSave}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {isSaving ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                  {showSaveSuccess && (
+                    <div className="flex items-center gap-2 text-green-700 bg-green-50 px-4 py-2 rounded-lg border border-green-200 animate-fade-in">
+                      <CheckCircle size={18} />
+                      <span className="font-medium">Changes saved successfully!</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {!isActive && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <p className="text-blue-800 font-medium">
@@ -797,22 +850,22 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
     if (carNum) {
       const currentCar = assignments.cars[carNum] || [];
       const newCarMembers = [...currentCar, draggedMember.id];
-      
-      // Validate Car 1 requirements
-      if (carNum === 1) {
+
+      // Validate Car 1 requirements - only check when there will be 2+ people
+      if (carNum === 1 && newCarMembers.length >= 2) {
         const validation = validateCar1(currentCar, draggedMember.id);
-        
+
         if (!validation.hasMale || !validation.hasFemale) {
-          const message = !validation.hasMale 
-            ? 'Car 1 requires at least 1 male member. Please add a male to Car 1.'
-            : 'Car 1 requires at least 1 female member. Please add a female to Car 1.';
-          
+          const message = !validation.hasMale
+            ? 'Car 1 requires at least 1 male member when 2 or more people are assigned. Please add a male to Car 1.'
+            : 'Car 1 requires at least 1 female member when 2 or more people are assigned. Please add a female to Car 1.';
+
           if (!window.confirm(message + ' Do you want to continue adding this member anyway?')) {
             return;
           }
         }
       }
-      
+
       setAssignments({
         ...assignments,
         cars: {
@@ -875,6 +928,25 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
 
   const getMemberById = (id) => members.find(m => m.id === id);
 
+  // Helper function to check if a member is assigned anywhere
+  const isMemberAssigned = (memberId) => {
+    // Check leadership roles
+    if (assignments.don === memberId || assignments.doc === memberId || assignments.duc === memberId) {
+      return true;
+    }
+    // Check cars
+    if (assignments.cars) {
+      for (const carMembers of Object.values(assignments.cars)) {
+        if (carMembers.includes(memberId)) return true;
+      }
+    }
+    // Check other positions
+    if ((assignments.couch || []).includes(memberId)) return true;
+    if ((assignments.phones || []).includes(memberId)) return true;
+    if ((assignments.northgate || []).includes(memberId)) return true;
+    return false;
+  };
+
   // Check Car 1 compliance
   const car1Members = (assignments.cars[1] || []).map(id => getMemberById(id)).filter(Boolean);
   const car1HasMale = car1Members.some(m => {
@@ -885,7 +957,7 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
     const gender = m.gender?.toLowerCase();
     return (gender === 'female' || gender === 'f' || gender === 'woman');
   });
-  const car1Compliant = car1Members.length === 0 || (car1HasMale && car1HasFemale);
+  const car1Compliant = car1Members.length < 2 || (car1HasMale && car1HasFemale);
 
   return (
     <div className="space-y-6">
@@ -914,13 +986,13 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
         </div>
       )}
 
-      {availableCars >= 1 && !car1Compliant && (
+      {availableCars >= 1 && car1Members.length >= 2 && !car1Compliant && (
         <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4 flex items-start gap-3">
           <AlertTriangle className="text-red-600 flex-shrink-0 mt-0.5" size={24} />
           <div>
             <p className="text-red-800 font-bold">Car 1 Requirements Not Met</p>
             <p className="text-red-700 text-sm mt-1">
-              Car 1 must have at least 1 male and 1 female member. 
+              Car 1 must have at least 1 male and 1 female member when 2 or more people are assigned.
               Current: {car1HasMale ? '✓ Male' : '✗ Male'} | {car1HasFemale ? '✓ Female' : '✗ Female'}
             </p>
           </div>
@@ -931,18 +1003,25 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
       <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
         <h4 className="font-semibold mb-3 text-gray-700">Available Members (Drag to Assign)</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-          {members.map(member => (
-            <div
-              key={member.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, member)}
-              onDragEnd={handleDragEnd}
-              className="bg-white border border-gray-300 rounded p-2 cursor-move hover:bg-blue-50 hover:border-blue-400 transition flex items-center gap-1"
-            >
-              <GripVertical size={14} className="text-gray-400" />
-              <span className="text-sm font-medium truncate">{member.name}</span>
-            </div>
-          ))}
+          {members.map(member => {
+            const isAssigned = isMemberAssigned(member.id);
+            return (
+              <div
+                key={member.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, member)}
+                onDragEnd={handleDragEnd}
+                className={`border rounded p-2 cursor-move transition flex items-center gap-1 ${
+                  isAssigned
+                    ? 'bg-gray-200 border-gray-400 text-gray-500 hover:bg-gray-300 hover:border-gray-500'
+                    : 'bg-white border-gray-300 hover:bg-blue-50 hover:border-blue-400'
+                }`}
+              >
+                <GripVertical size={14} className={isAssigned ? 'text-gray-400' : 'text-gray-400'} />
+                <span className="text-sm font-medium truncate">{member.name}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
