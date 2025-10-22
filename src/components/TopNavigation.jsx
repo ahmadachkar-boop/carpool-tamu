@@ -10,14 +10,6 @@ const TopNavigation = ({ user, logout }) => {
   const location = useLocation();
   const { hasActiveNDR, loading: ndrLoading } = useActiveNDR();
 
-  // Detect if running as iOS PWA
-  const isIOSPWA = () => {
-    return window.navigator.standalone === true ||
-           window.matchMedia('(display-mode: standalone)').matches;
-  };
-
-  const [isAppMode] = useState(isIOSPWA());
-
   const directorDropdownRef = useRef(null);
   const userDropdownRef = useRef(null);
 
@@ -71,18 +63,17 @@ const TopNavigation = ({ user, logout }) => {
 
   return (
     <>
-      {/* Modern Dark Navigation */}
-      <nav className={`${isAppMode ? 'bg-black/95' : 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900'} backdrop-blur-xl border-b border-white/10 shadow-2xl sticky top-0 z-50`}>
+      {/* Lime Green Navigation */}
+      <nav className="bg-[#79F200] shadow-2xl sticky top-0 z-50">
         {/* Safe area spacer for iOS notch */}
         <div className="pt-safe"></div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo/Brand - Lime Green Glow */}
-            <Link to="/" className="flex items-center space-x-3 hover:opacity-90 transition group">
+            {/* Logo/Brand */}
+            <Link to="/" className="flex items-center space-x-3 hover:opacity-80 transition group">
               <div className="relative">
-                <div className="absolute inset-0 bg-[#79F200] rounded-2xl blur-md opacity-40 group-hover:opacity-60 transition"></div>
-                <div className="relative w-12 h-12 bg-gradient-to-br from-[#79F200] to-[#5bc000] rounded-2xl flex items-center justify-center shadow-xl transform group-hover:scale-110 transition p-1.5">
+                <div className="relative w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-xl transform group-hover:scale-110 transition p-1.5">
                   <img
                     src={`${process.env.PUBLIC_URL}/logo.png`}
                     alt="TAMU Carpool"
@@ -95,12 +86,12 @@ const TopNavigation = ({ user, logout }) => {
                 </div>
               </div>
               <div className="hidden sm:block">
-                <span className="text-xl font-black bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                <span className="text-xl font-black text-gray-900">
                   TAMU Carpool
                 </span>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <Sparkles size={10} className="text-[#79F200]" />
-                  <span className="text-[10px] font-bold text-[#79F200]">v2.0</span>
+                  <Sparkles size={10} className="text-gray-900" />
+                  <span className="text-[10px] font-bold text-gray-900">v2.0</span>
                 </div>
               </div>
             </Link>
@@ -113,16 +104,10 @@ const TopNavigation = ({ user, logout }) => {
                   to={item.path}
                   className={`group relative flex items-center space-x-2 px-4 py-2.5 rounded-xl transition-all font-bold ${
                     isActive(item.path)
-                      ? 'text-gray-900'
-                      : 'text-gray-300 hover:text-white'
+                      ? 'bg-white text-gray-900 shadow-lg'
+                      : 'text-gray-900 hover:bg-white/30'
                   }`}
                 >
-                  {isActive(item.path) && (
-                    <>
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#6dd100] rounded-xl blur opacity-40"></div>
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#6dd100] rounded-xl"></div>
-                    </>
-                  )}
                   <item.icon size={20} className="relative z-10" />
                   <span className="relative z-10">{item.label}</span>
                 </Link>
@@ -133,7 +118,7 @@ const TopNavigation = ({ user, logout }) => {
                 <div className="relative" ref={directorDropdownRef}>
                   <button
                     onClick={() => setShowDirectorDropdown(!showDirectorDropdown)}
-                    className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-gray-300 hover:text-white transition-all font-bold hover:bg-white/5"
+                    className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-gray-900 hover:bg-white/30 transition-all font-bold"
                   >
                     <Shield size={20} />
                     <span>Director</span>
@@ -141,12 +126,12 @@ const TopNavigation = ({ user, logout }) => {
                   </button>
 
                   {showDirectorDropdown && (
-                    <div className="absolute right-0 mt-2 w-60 bg-gray-900/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-50 border border-white/10">
+                    <div className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-2xl py-2 z-50 border border-gray-200">
                       {filteredDirectorItems.map((item) => (
                         <Link
                           key={item.path}
                           to={item.path}
-                          className="flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-white/5 transition font-semibold"
+                          className="flex items-center space-x-3 px-4 py-3 text-gray-900 hover:bg-[#79F200]/20 transition font-semibold"
                           onClick={() => setShowDirectorDropdown(false)}
                         >
                           <item.icon size={20} />
@@ -165,29 +150,28 @@ const TopNavigation = ({ user, logout }) => {
               <div className="relative" ref={userDropdownRef}>
                 <button
                   onClick={() => setShowUserDropdown(!showUserDropdown)}
-                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-white/5 transition group"
+                  className="flex items-center space-x-2 px-3 py-2 rounded-xl hover:bg-white/30 transition group"
                 >
                   <div className="relative">
-                    <div className="absolute inset-0 bg-[#79F200] rounded-full blur-sm opacity-30 group-hover:opacity-50 transition"></div>
-                    <div className="relative w-10 h-10 bg-gradient-to-br from-[#79F200] to-[#5bc000] rounded-full flex items-center justify-center text-gray-900 font-black text-base shadow-lg">
+                    <div className="relative w-10 h-10 bg-white rounded-full flex items-center justify-center text-[#79F200] font-black text-base shadow-lg">
                       {user?.name?.charAt(0) || 'U'}
                     </div>
                   </div>
-                  <span className="hidden sm:block font-bold text-white">{user?.name?.split(' ')[0] || 'User'}</span>
-                  <ChevronDown size={18} className={`text-gray-400 transition-transform ${showUserDropdown ? 'rotate-180' : ''}`} />
+                  <span className="hidden sm:block font-bold text-gray-900">{user?.name?.split(' ')[0] || 'User'}</span>
+                  <ChevronDown size={18} className={`text-gray-900 transition-transform ${showUserDropdown ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showUserDropdown && (
-                  <div className="absolute right-0 mt-2 w-60 bg-gray-900/95 backdrop-blur-xl rounded-2xl shadow-2xl py-2 z-50 border border-white/10">
-                    <div className="px-4 py-3 border-b border-white/10">
-                      <p className="text-sm font-bold text-white">{user?.name}</p>
+                  <div className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-2xl py-2 z-50 border border-gray-200">
+                    <div className="px-4 py-3 border-b border-gray-200">
+                      <p className="text-sm font-bold text-gray-900">{user?.name}</p>
                       <p className="text-xs text-[#79F200] capitalize mt-1 font-semibold">{user?.role}</p>
                     </div>
 
                     <Link
                       to="/profile"
                       onClick={() => setShowUserDropdown(false)}
-                      className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-white/5 transition font-semibold"
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-gray-900 hover:bg-[#79F200]/20 transition font-semibold"
                     >
                       <UserCircle size={20} />
                       <span>My Profile</span>
@@ -195,7 +179,7 @@ const TopNavigation = ({ user, logout }) => {
 
                     <button
                       onClick={logout}
-                      className="w-full flex items-center space-x-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition font-semibold border-t border-white/10"
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 transition font-semibold border-t border-gray-200"
                     >
                       <LogOut size={20} />
                       <span>Logout</span>
@@ -207,7 +191,7 @@ const TopNavigation = ({ user, logout }) => {
               {/* Mobile menu button */}
               <button
                 onClick={() => setShowMobileMenu(!showMobileMenu)}
-                className="md:hidden p-2 rounded-xl hover:bg-white/5 transition text-white"
+                className="md:hidden p-2 rounded-xl hover:bg-white/30 transition text-gray-900"
               >
                 {showMobileMenu ? <X size={28} /> : <Menu size={28} />}
               </button>
@@ -217,7 +201,7 @@ const TopNavigation = ({ user, logout }) => {
 
         {/* Mobile Navigation */}
         {showMobileMenu && (
-          <div className={`md:hidden ${isAppMode ? 'bg-black/95' : 'bg-gray-900/95'} backdrop-blur-xl border-t border-white/10 pb-safe`}>
+          <div className="md:hidden bg-[#79F200] border-t border-gray-900/10 pb-safe">
             <div className="px-4 pt-2 pb-4 space-y-1">
               {filteredItems.map((item) => (
                 <Link
@@ -225,16 +209,10 @@ const TopNavigation = ({ user, logout }) => {
                   to={item.path}
                   className={`group relative flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-bold ${
                     isActive(item.path)
-                      ? 'text-gray-900'
-                      : 'text-gray-300 hover:text-white'
+                      ? 'bg-white text-gray-900 shadow-lg'
+                      : 'text-gray-900 hover:bg-white/30'
                   }`}
                 >
-                  {isActive(item.path) && (
-                    <>
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#6dd100] rounded-xl blur opacity-40"></div>
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#6dd100] rounded-xl"></div>
-                    </>
-                  )}
                   <item.icon size={22} className="relative z-10" />
                   <span className="relative z-10">{item.label}</span>
                 </Link>
@@ -244,8 +222,8 @@ const TopNavigation = ({ user, logout }) => {
                 to="/profile"
                 className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-bold ${
                   isActive('/profile')
-                    ? 'bg-gradient-to-r from-[#79F200] to-[#6dd100] text-gray-900'
-                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                    ? 'bg-white text-gray-900 shadow-lg'
+                    : 'text-gray-900 hover:bg-white/30'
                 }`}
               >
                 <UserCircle size={22} />
@@ -254,16 +232,16 @@ const TopNavigation = ({ user, logout }) => {
 
               {filteredDirectorItems.length > 0 && (
                 <>
-                  <div className="border-t border-white/10 my-3"></div>
+                  <div className="border-t border-gray-900/10 my-3"></div>
                   <div className="px-4 py-2 flex items-center gap-2">
-                    <Shield size={16} className="text-[#79F200]" />
-                    <span className="text-xs font-black text-gray-400 uppercase tracking-wider">Director Tools</span>
+                    <Shield size={16} className="text-gray-900" />
+                    <span className="text-xs font-black text-gray-900 uppercase tracking-wider">Director Tools</span>
                   </div>
                   {filteredDirectorItems.map((item) => (
                     <Link
                       key={item.path}
                       to={item.path}
-                      className="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition font-bold"
+                      className="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-900 hover:bg-white/30 transition font-bold"
                     >
                       <item.icon size={22} />
                       <span>{item.label}</span>
@@ -274,7 +252,7 @@ const TopNavigation = ({ user, logout }) => {
 
               <button
                 onClick={logout}
-                className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 transition font-bold mt-4 border border-red-500/20"
+                className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition font-bold mt-4 bg-white"
               >
                 <LogOut size={22} />
                 <span>Logout</span>
@@ -284,7 +262,7 @@ const TopNavigation = ({ user, logout }) => {
         )}
       </nav>
 
-      {/* NDR Status Indicator - Modern Design */}
+      {/* NDR Status Indicator */}
       {!ndrLoading && (
         hasActiveNDR ? (
           <div className="relative bg-gradient-to-r from-green-600 via-emerald-600 to-green-600 text-white text-center py-3 px-4 shadow-2xl">
