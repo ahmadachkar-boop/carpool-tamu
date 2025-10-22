@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs, documentId } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2, Search, Filter, SortAsc } from 'lucide-react';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2, Search, Filter, SortAsc, Cloud, CloudRain, CloudSnow, Wind, RefreshCw } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { isMale, isFemale } from '../utils/genderUtils';
 import { formatTime, formatDateTime, calculateWaitTime, formatWaitTime, isLongWait } from '../utils/timeUtils';
 import { logError, logWarning } from '../utils/errorLogger';
+import { getCurrentWeather, getWeatherAlert, getTrafficConditions, getTrafficAlert, getWeatherEmoji, WEATHER_SEVERITY } from '../utils/weatherUtils';
+import Snackbar from './Snackbar';
 
 // CONSTANTS: Extracted magic numbers for maintainability
 const BUFFER_MINUTES_PER_STOP = 2; // Minutes to add per waypoint stop
@@ -153,6 +155,21 @@ const RideManagement = () => {
   const [filterOption, setFilterOption] = useState('all'); // all, single, group
   const [sortOption, setSortOption] = useState('time'); // time, riders, wait
 
+  // NEW: Undo functionality
+  const [snackbar, setSnackbar] = useState({ isOpen: false, message: '', type: 'info', onUndo: null });
+  const [lastAction, setLastAction] = useState(null); // Stores last action for undo
+
+  // NEW: Weather and traffic
+  const [weather, setWeather] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [activeRideCompletionTimes, setActiveRideCompletionTimes] = useState({}); // { rideId: estimatedTime }
+
+  // NEW: Reassignment modal
+  const [reassigningRide, setReassigningRide] = useState(null);
+
+  // NEW: Patron history modal
+  const [patronHistory, setPatronHistory] = useState({ isOpen: false, phone: '', rides: [] });
+
   // Track component mount/unmount to prevent memory leaks
   useEffect(() => {
     isMounted.current = true;
@@ -160,6 +177,29 @@ const RideManagement = () => {
       isMounted.current = false;
     };
   }, []);
+
+  // NEW: Fetch weather data every 10 minutes
+  useEffect(() => {
+    const fetchWeather = async () => {
+      if (!activeNDR?.location) return;
+
+      setWeatherLoading(true);
+      // Use event location or default to College Station, TX
+      const lat = activeNDR.location?.lat || 30.6280;
+      const lng = activeNDR.location?.lng || -96.3344;
+
+      const weatherData = await getCurrentWeather(lat, lng);
+      if (isMounted.current && weatherData) {
+        setWeather(weatherData);
+      }
+      setWeatherLoading(false);
+    };
+
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 600000); // Update every 10 minutes
+
+    return () => clearInterval(interval);
+  }, [activeNDR]);
 
   // NEW: Calculate ETAs for pending rides using real routing
   // OPTIMIZED: Debounce 45s, limit to top 3 rides, cache for 5 min, rate limiting
@@ -784,12 +824,26 @@ const RideManagement = () => {
       onConfirm: async () => {
         setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: true } }));
         try {
+          // Store current state for undo
+          const rideDoc = await getDoc(doc(db, 'rides', rideId));
+          const previousState = rideDoc.data();
+
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'completed',
             completedAt: Timestamp.now()
           });
+
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
+
+          // Show snackbar with undo option
+          setLastAction({ type: 'complete', rideId, previousState });
+          setSnackbar({
+            isOpen: true,
+            message: 'Ride marked as completed',
+            type: 'success',
+            onUndo: () => undoLastAction()
+          });
         } catch (error) {
           logError('Complete Ride', error, { rideId });
           setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
@@ -813,6 +867,10 @@ const RideManagement = () => {
       onSubmit: async (reason) => {
         setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: true } }));
         try {
+          // Store current state for undo
+          const rideDoc = await getDoc(doc(db, 'rides', rideId));
+          const previousState = rideDoc.data();
+
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'cancelled',
             completedAt: Timestamp.now(),
@@ -821,6 +879,15 @@ const RideManagement = () => {
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
           setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
+
+          // Show snackbar with undo option
+          setLastAction({ type: 'cancel', rideId, previousState });
+          setSnackbar({
+            isOpen: true,
+            message: 'Ride cancelled',
+            type: 'warning',
+            onUndo: () => undoLastAction()
+          });
         } catch (error) {
           logError('Cancel Ride', error, { rideId, reason });
           setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
@@ -845,6 +912,10 @@ const RideManagement = () => {
       onSubmit: async (reason) => {
         setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: true } }));
         try {
+          // Store current state for undo
+          const rideDoc = await getDoc(doc(db, 'rides', rideId));
+          const previousState = rideDoc.data();
+
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'terminated',
             completedAt: Timestamp.now(),
@@ -853,6 +924,15 @@ const RideManagement = () => {
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
           setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
+
+          // Show snackbar with undo option
+          setLastAction({ type: 'terminate', rideId, previousState });
+          setSnackbar({
+            isOpen: true,
+            message: 'Ride terminated',
+            type: 'warning',
+            onUndo: () => undoLastAction()
+          });
         } catch (error) {
           logError('Terminate Ride', error, { rideId, reason });
           setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
@@ -866,6 +946,83 @@ const RideManagement = () => {
         }
       }
     });
+  };
+
+  // NEW: Undo last action
+  const undoLastAction = async () => {
+    if (!lastAction) return;
+
+    try {
+      const { type, rideId, previousState } = lastAction;
+
+      // Restore previous state
+      await updateDoc(doc(db, 'rides', rideId), {
+        status: previousState.status,
+        completedAt: previousState.completedAt || null,
+        cancellationReason: previousState.cancellationReason || null,
+        terminationReason: previousState.terminationReason || null
+      });
+
+      setSnackbar({ isOpen: false, message: '', type: 'info', onUndo: null });
+      setLastAction(null);
+
+      // Show success message
+      setSnackbar({
+        isOpen: true,
+        message: `Undo successful - ride restored to ${previousState.status}`,
+        type: 'success',
+        onUndo: null
+      });
+    } catch (error) {
+      logError('Undo Action', error, { lastAction });
+      setAlertModal({
+        isOpen: true,
+        title: 'Undo Failed',
+        message: 'Could not undo the last action: ' + error.message
+      });
+    }
+  };
+
+  // NEW: Reassign active ride to different car
+  const reassignRide = async () => {
+    if (!reassigningRide || !reassigningRide.newCarNumber) {
+      setAlertModal({
+        isOpen: true,
+        title: 'No Car Selected',
+        message: 'Please select a car to reassign to.'
+      });
+      return;
+    }
+
+    try {
+      const newCarNumber = parseInt(reassigningRide.newCarNumber);
+      const ndrDoc = await getDoc(doc(db, 'ndrs', activeNDR.id));
+      const ndrData = ndrDoc.data();
+      const cars = ndrData.cars || [];
+      const carInfo = cars.find(c => c.carNumber === newCarNumber);
+
+      await updateDoc(doc(db, 'rides', reassigningRide.id), {
+        carNumber: newCarNumber,
+        assignedDriver: carInfo ? `${carInfo.driverName}` : 'Unknown Driver',
+        carInfo: carInfo || null,
+        reassignedAt: Timestamp.now()
+      });
+
+      setReassigningRide(null);
+      setSnackbar({
+        isOpen: true,
+        message: `Ride reassigned to Car ${newCarNumber}`,
+        type: 'success',
+        onUndo: null
+      });
+    } catch (error) {
+      logError('Reassign Ride', error, { rideId: reassigningRide.id });
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Error reassigning ride: ' + error.message
+      });
+    }
   };
 
   const startEdit = (ride) => {
@@ -1166,6 +1323,50 @@ const RideManagement = () => {
           </div>
         </div>
       </div>
+
+      {/* NEW: Weather and Traffic Alerts - BIG FOCUS */}
+      {weather && (
+        <div className={`rounded-lg border-2 p-4 ${
+          weather.severity === WEATHER_SEVERITY.DANGER ? 'bg-red-50 border-red-500' :
+          weather.severity === WEATHER_SEVERITY.WARNING ? 'bg-orange-50 border-orange-500' :
+          weather.severity === WEATHER_SEVERITY.CAUTION ? 'bg-yellow-50 border-yellow-500' :
+          'bg-blue-50 border-blue-200'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="text-4xl">{getWeatherEmoji(weather.condition)}</div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">
+                  {weather.temp}°F - {weather.description}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Wind: {weather.windSpeed} mph | Humidity: {weather.humidity}%
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setWeatherLoading(true);
+                const lat = activeNDR.location?.lat || 30.6280;
+                const lng = activeNDR.location?.lng || -96.3344;
+                const weatherData = await getCurrentWeather(lat, lng);
+                if (weatherData) setWeather(weatherData);
+                setWeatherLoading(false);
+              }}
+              className="px-3 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation"
+              disabled={weatherLoading}
+            >
+              <RefreshCw size={16} className={weatherLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
+          {getWeatherAlert(weather) && (
+            <div className="mt-3 p-3 bg-white rounded-lg border-2 border-current">
+              <p className="font-semibold text-gray-900">{getWeatherAlert(weather)}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* NEW: Car Status Board */}
       {availableCars > 0 && (
@@ -1635,6 +1836,13 @@ const RideManagement = () => {
                               Edit
                             </button>
                             <button
+                              onClick={() => setReassigningRide({ ...ride, newCarNumber: '' })}
+                              className="px-4 py-3 md:py-2 min-h-touch bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 text-sm touch-manipulation flex items-center gap-1"
+                            >
+                              <RefreshCw size={14} />
+                              Reassign
+                            </button>
+                            <button
                               onClick={() => cancelRide(ride.id)}
                               disabled={loadingStates.cancellingRide[ride.id]}
                               className="px-4 py-3 md:py-2 min-h-touch bg-red-500 text-white rounded hover:bg-red-600 active:bg-red-700 text-sm touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -1834,6 +2042,69 @@ const RideManagement = () => {
           autoFocus
         />
       </Modal>
+
+      {/* NEW: Reassignment Modal */}
+      {reassigningRide && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <RefreshCw size={24} className="text-blue-600" />
+              Reassign Ride
+            </h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Patron:</strong> {reassigningRide.patronName}
+              </p>
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Current Car:</strong> {reassigningRide.carNumber}
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Reassign to Car:
+              </label>
+              <select
+                value={reassigningRide.newCarNumber || ''}
+                onChange={(e) => setReassigningRide({ ...reassigningRide, newCarNumber: e.target.value })}
+                className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-touch"
+              >
+                <option value="">Select a car...</option>
+                {Array.from({ length: availableCars }, (_, i) => i + 1)
+                  .filter(num => num !== reassigningRide.carNumber)
+                  .map(num => (
+                    <option key={num} value={num}>
+                      Car {num}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={reassignRide}
+                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold min-h-touch touch-manipulation"
+              >
+                Reassign
+              </button>
+              <button
+                onClick={() => setReassigningRide(null)}
+                className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold min-h-touch touch-manipulation"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Snackbar for undo actions */}
+      <Snackbar
+        isOpen={snackbar.isOpen}
+        message={snackbar.message}
+        type={snackbar.type}
+        onClose={() => setSnackbar({ ...snackbar, isOpen: false })}
+        onUndo={snackbar.onUndo}
+        autoHideDuration={snackbar.onUndo ? undefined : 5000}
+      />
     </div>
   );
 };
