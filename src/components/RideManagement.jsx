@@ -163,6 +163,8 @@ const RideManagement = () => {
   // NEW: Weather and traffic
   const [weather, setWeather] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [trafficData, setTrafficData] = useState(null);
+  const [trafficLoading, setTrafficLoading] = useState(false);
   const [activeRideCompletionTimes, setActiveRideCompletionTimes] = useState({}); // { rideId: estimatedTime }
 
   // NEW: Reassignment modal
@@ -181,9 +183,9 @@ const RideManagement = () => {
 
   // NEW: Fetch weather data every 10 minutes
   useEffect(() => {
-    const fetchWeather = async () => {
-      if (!activeNDR?.location) return;
+    if (!activeNDR) return;
 
+    const fetchWeather = async () => {
       setWeatherLoading(true);
       // Use event location or default to College Station, TX
       const lat = activeNDR.location?.lat || 30.6280;
@@ -201,6 +203,45 @@ const RideManagement = () => {
 
     return () => clearInterval(interval);
   }, [activeNDR]);
+
+  // NEW: Monitor traffic for active rides every 5 minutes
+  useEffect(() => {
+    if (!activeNDR || !googleMapsLoaded || !window.google || rides.active.length === 0) {
+      setTrafficData(null);
+      return;
+    }
+
+    const fetchTraffic = async () => {
+      setTrafficLoading(true);
+
+      try {
+        const directionsService = new window.google.maps.DirectionsService();
+
+        // Get traffic for the first active ride as a sample
+        const sampleRide = rides.active[0];
+        const location = carLocations[sampleRide.carNumber];
+
+        if (location && sampleRide.pickup) {
+          const origin = { lat: location.latitude, lng: location.longitude };
+          const destination = sampleRide.pickup;
+
+          const traffic = await getTrafficConditions(origin, destination, directionsService);
+          if (isMounted.current && traffic) {
+            setTrafficData(traffic);
+          }
+        }
+      } catch (error) {
+        logError('Traffic Monitoring', error);
+      } finally {
+        setTrafficLoading(false);
+      }
+    };
+
+    fetchTraffic();
+    const interval = setInterval(fetchTraffic, 300000); // Update every 5 minutes
+
+    return () => clearInterval(interval);
+  }, [activeNDR, googleMapsLoaded, rides.active, carLocations]);
 
   // SERVER-SIDE: ETA Calculation Function
   // This function calculates ETAs and stores them in Firestore
@@ -1346,48 +1387,129 @@ const RideManagement = () => {
       </div>
 
       {/* NEW: Weather and Traffic Alerts - BIG FOCUS */}
-      {weather && (
-        <div className={`rounded-lg border-2 p-4 ${
-          weather.severity === WEATHER_SEVERITY.DANGER ? 'bg-red-50 border-red-500' :
-          weather.severity === WEATHER_SEVERITY.WARNING ? 'bg-orange-50 border-orange-500' :
-          weather.severity === WEATHER_SEVERITY.CAUTION ? 'bg-yellow-50 border-yellow-500' :
-          'bg-blue-50 border-blue-200'
-        }`}>
-          <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="space-y-4">
+        {/* Weather Alert */}
+        {weather && (
+          <div className={`rounded-xl border-3 p-5 shadow-lg ${
+            weather.severity === WEATHER_SEVERITY.DANGER ? 'bg-red-50 border-red-600' :
+            weather.severity === WEATHER_SEVERITY.WARNING ? 'bg-orange-50 border-orange-600' :
+            weather.severity === WEATHER_SEVERITY.CAUTION ? 'bg-yellow-50 border-yellow-600' :
+            'bg-blue-50 border-blue-300'
+          }`}>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="text-5xl">{getWeatherEmoji(weather.condition)}</div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-xl">
+                    Current Weather: {weather.temp}°F
+                  </h3>
+                  <p className="text-base text-gray-700 font-medium capitalize">
+                    {weather.description}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Wind: {weather.windSpeed} mph | Humidity: {weather.humidity}%
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setWeatherLoading(true);
+                  const lat = activeNDR.location?.lat || 30.6280;
+                  const lng = activeNDR.location?.lng || -96.3344;
+                  const weatherData = await getCurrentWeather(lat, lng);
+                  if (weatherData) setWeather(weatherData);
+                  setWeatherLoading(false);
+                }}
+                className="px-4 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation font-semibold"
+                disabled={weatherLoading}
+              >
+                <RefreshCw size={16} className={weatherLoading ? 'animate-spin' : ''} />
+                Refresh Weather
+              </button>
+            </div>
+            {getWeatherAlert(weather) && (
+              <div className="mt-4 p-4 bg-white rounded-lg border-2 border-current shadow-sm">
+                <p className="font-bold text-gray-900 text-base">{getWeatherAlert(weather)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Traffic Alert */}
+        {trafficData && (
+          <div className={`rounded-xl border-3 p-5 shadow-lg ${
+            trafficData.severity === WEATHER_SEVERITY.WARNING ? 'bg-red-50 border-red-600' :
+            trafficData.severity === WEATHER_SEVERITY.CAUTION ? 'bg-orange-50 border-orange-600' :
+            'bg-green-50 border-green-300'
+          }`}>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="text-5xl">🚦</div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-xl">
+                    Current Traffic: {trafficData.trafficLevel.toUpperCase()}
+                  </h3>
+                  <p className="text-base text-gray-700 font-medium">
+                    {trafficData.distance} - {trafficData.durationInTraffic} min with traffic
+                  </p>
+                  {trafficData.delay > 0 && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      +{trafficData.delay} min delay from normal conditions
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!googleMapsLoaded || !window.google || rides.active.length === 0) return;
+
+                  setTrafficLoading(true);
+                  try {
+                    const directionsService = new window.google.maps.DirectionsService();
+                    const sampleRide = rides.active[0];
+                    const location = carLocations[sampleRide.carNumber];
+
+                    if (location && sampleRide.pickup) {
+                      const origin = { lat: location.latitude, lng: location.longitude };
+                      const traffic = await getTrafficConditions(origin, sampleRide.pickup, directionsService);
+                      if (traffic) setTrafficData(traffic);
+                    }
+                  } catch (error) {
+                    logError('Traffic Refresh', error);
+                  } finally {
+                    setTrafficLoading(false);
+                  }
+                }}
+                className="px-4 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation font-semibold"
+                disabled={trafficLoading}
+              >
+                <RefreshCw size={16} className={trafficLoading ? 'animate-spin' : ''} />
+                Refresh Traffic
+              </button>
+            </div>
+            {getTrafficAlert(trafficData) && (
+              <div className="mt-4 p-4 bg-white rounded-lg border-2 border-current shadow-sm">
+                <p className="font-bold text-gray-900 text-base">{getTrafficAlert(trafficData)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Show placeholder when no traffic data yet */}
+        {!trafficData && rides.active.length > 0 && (
+          <div className="rounded-xl border-3 border-gray-300 bg-gray-50 p-5 shadow-lg">
             <div className="flex items-center gap-3">
-              <div className="text-4xl">{getWeatherEmoji(weather.condition)}</div>
+              <div className="text-5xl">🚦</div>
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">
-                  {weather.temp}°F - {weather.description}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Wind: {weather.windSpeed} mph | Humidity: {weather.humidity}%
+                <h3 className="font-bold text-gray-900 text-xl">Traffic Monitoring</h3>
+                <p className="text-base text-gray-600">
+                  {trafficLoading ? 'Loading current traffic conditions...' : 'Traffic data will appear when active rides are en route'}
                 </p>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                setWeatherLoading(true);
-                const lat = activeNDR.location?.lat || 30.6280;
-                const lng = activeNDR.location?.lng || -96.3344;
-                const weatherData = await getCurrentWeather(lat, lng);
-                if (weatherData) setWeather(weatherData);
-                setWeatherLoading(false);
-              }}
-              className="px-3 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation"
-              disabled={weatherLoading}
-            >
-              <RefreshCw size={16} className={weatherLoading ? 'animate-spin' : ''} />
-              Refresh
-            </button>
           </div>
-          {getWeatherAlert(weather) && (
-            <div className="mt-3 p-3 bg-white rounded-lg border-2 border-current">
-              <p className="font-semibold text-gray-900">{getWeatherAlert(weather)}</p>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {/* SERVER-SIDE: Manual ETA Recalculation */}
       {rides.pending.length > 0 && (
