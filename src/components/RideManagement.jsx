@@ -5,6 +5,18 @@ import { useActiveNDR } from '../ActiveNDRContext';
 import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 
+// Helper function to normalize and check gender
+const normalizeGender = (gender) => {
+  if (!gender) return null;
+  const normalized = gender.toLowerCase().trim();
+  if (['male', 'm', 'man'].includes(normalized)) return 'male';
+  if (['female', 'f', 'woman'].includes(normalized)) return 'female';
+  return null;
+};
+
+const isMale = (member) => normalizeGender(member?.gender) === 'male';
+const isFemale = (member) => normalizeGender(member?.gender) === 'female';
+
 const RideManagement = () => {
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { isLoaded: googleMapsLoaded } = useGoogleMaps();
@@ -16,7 +28,8 @@ const RideManagement = () => {
   const [assigningRide, setAssigningRide] = useState(null);
   const [splittingRide, setSplittingRide] = useState(null);
   const [splitRiders, setSplitRiders] = useState({ ride1: 1, ride2: 1 });
-  const [eligibleCars, setEligibleCars] = useState({}); // { carNumber: { eligible: boolean, reason: string } }
+  const [eligibleCars, setEligibleCars] = useState({}); // { carNumber: { eligible: boolean, reason: string, maleCount: number, femaleCount: number } }
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
   
   // NEW: Car status tracking
   const [carLocations, setCarLocations] = useState({});
@@ -386,6 +399,7 @@ const RideManagement = () => {
 
   const openAssignCar = async (ride) => {
     setAssigningRide({ ...ride, selectedCar: '' });
+    setCheckingEligibility(true);
 
     // If single rider, check which cars are eligible
     if (ride.riders === 1) {
@@ -401,7 +415,9 @@ const RideManagement = () => {
           if (carAssignments.length < 2) {
             carEligibility[carNum] = {
               eligible: false,
-              reason: 'Needs 2+ members'
+              reason: 'Needs 2+ members',
+              maleCount: 0,
+              femaleCount: 0
             };
             continue;
           }
@@ -415,25 +431,24 @@ const RideManagement = () => {
             }
           }
 
-          const hasMale = carMembers.some(m => {
-            const gender = m.gender?.toLowerCase();
-            return gender === 'male' || gender === 'm' || gender === 'man';
-          });
-
-          const hasFemale = carMembers.some(m => {
-            const gender = m.gender?.toLowerCase();
-            return gender === 'female' || gender === 'f' || gender === 'woman';
-          });
+          const maleCount = carMembers.filter(m => isMale(m)).length;
+          const femaleCount = carMembers.filter(m => isFemale(m)).length;
+          const hasMale = maleCount > 0;
+          const hasFemale = femaleCount > 0;
 
           if (!hasMale || !hasFemale) {
             carEligibility[carNum] = {
               eligible: false,
-              reason: 'Needs opposite genders'
+              reason: 'Needs opposite genders',
+              maleCount,
+              femaleCount
             };
           } else {
             carEligibility[carNum] = {
               eligible: true,
-              reason: ''
+              reason: '',
+              maleCount,
+              femaleCount
             };
           }
         }
@@ -441,10 +456,13 @@ const RideManagement = () => {
         setEligibleCars(carEligibility);
       } catch (error) {
         console.error('Error checking car eligibility:', error);
+      } finally {
+        setCheckingEligibility(false);
       }
     } else {
       // Multi-rider, all cars eligible
       setEligibleCars({});
+      setCheckingEligibility(false);
     }
   };
 
@@ -480,15 +498,8 @@ const RideManagement = () => {
           }
         }
 
-        const hasMale = carMembers.some(m => {
-          const gender = m.gender?.toLowerCase();
-          return gender === 'male' || gender === 'm' || gender === 'man';
-        });
-
-        const hasFemale = carMembers.some(m => {
-          const gender = m.gender?.toLowerCase();
-          return gender === 'female' || gender === 'f' || gender === 'woman';
-        });
+        const hasMale = carMembers.some(m => isMale(m));
+        const hasFemale = carMembers.some(m => isFemale(m));
 
         if (!hasMale || !hasFemale) {
           alert(`Car ${carNumber} must have both male and female members assigned before accepting single rider rides. Please update Car ${carNumber} assignments in the NDR or select a different car.`);
@@ -977,14 +988,22 @@ const RideManagement = () => {
                     /* CAR ASSIGNMENT MODE */
                     <div className="space-y-3">
                       <p className="font-semibold">Assign car to {ride.patronName}</p>
-                      {assigningRide.riders === 1 && (
+                      {checkingEligibility && (
+                        <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 flex items-center gap-2">
+                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                          <p className="text-blue-800 text-sm font-medium">
+                            Checking car eligibility...
+                          </p>
+                        </div>
+                      )}
+                      {assigningRide.riders === 1 && !checkingEligibility && (
                         <>
                           <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
                             <p className="text-yellow-800 text-sm font-medium">
                               ⚠️ Single rider rides MUST be assigned to a car with opposite gender members for safety.
                             </p>
                           </div>
-                          {Object.values(eligibleCars).every(car => !car.eligible) && (
+                          {Object.keys(eligibleCars).length > 0 && Object.values(eligibleCars).every(car => !car.eligible) && (
                             <div className="bg-red-50 border border-red-300 rounded-lg p-3">
                               <p className="text-red-800 text-sm font-semibold">
                                 No cars are eligible! All cars need at least 2 members with opposite genders assigned.
@@ -1000,12 +1019,21 @@ const RideManagement = () => {
                         value={assigningRide.selectedCar}
                         onChange={(e) => setAssigningRide({...assigningRide, selectedCar: e.target.value})}
                         className="w-full px-3 py-2 border rounded"
+                        disabled={checkingEligibility}
                       >
-                        <option value="">Select a car...</option>
+                        <option value="">{checkingEligibility ? 'Checking eligibility...' : 'Select a car...'}</option>
                         {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => {
                           const carEligibility = eligibleCars[num];
                           const isEligible = !carEligibility || carEligibility.eligible;
                           const reason = carEligibility?.reason || '';
+                          const maleCount = carEligibility?.maleCount || 0;
+                          const femaleCount = carEligibility?.femaleCount || 0;
+
+                          // Build gender breakdown display
+                          let genderInfo = '';
+                          if (assigningRide.riders === 1 && carEligibility) {
+                            genderInfo = ` (${maleCount}M, ${femaleCount}F)`;
+                          }
 
                           return (
                             <option
@@ -1013,7 +1041,7 @@ const RideManagement = () => {
                               value={num}
                               disabled={!isEligible}
                             >
-                              Car {num}{!isEligible ? ` (${reason})` : ''}
+                              Car {num}{genderInfo}{!isEligible ? ` - ${reason}` : isEligible && assigningRide.riders === 1 ? ' ✓' : ''}
                             </option>
                           );
                         })}
