@@ -932,8 +932,8 @@ const RideManagement = () => {
   const assignToActiveRide = async (pendingRideId, activeRideId) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Combine Rides?',
-      message: 'This will add the pending patron to the active ride. The car will pick up and drop off both patrons.',
+      title: 'Assign to Same Car?',
+      message: 'This will assign the pending ride to the same car. Both riders will show as separate active rides.',
       onConfirm: async () => {
         try {
           const pendingRideDoc = await getDoc(doc(db, 'rides', pendingRideId));
@@ -951,50 +951,19 @@ const RideManagement = () => {
           const pendingRide = pendingRideDoc.data();
           const activeRide = activeRideDoc.data();
 
-          // Combine the rides by updating the active ride's dropoffs array
-          // Filter out undefined values
-          const currentDropoffs = activeRide.dropoffs
-            ? activeRide.dropoffs.filter(d => d)
-            : (activeRide.dropoff ? [activeRide.dropoff] : []);
-
-          const pendingDropoffs = pendingRide.dropoffs
-            ? pendingRide.dropoffs.filter(d => d)
-            : (pendingRide.dropoff ? [pendingRide.dropoff] : []);
-
-          // Add pending ride's pickup and dropoffs to the active ride
-          // We'll add them at the end of the route
-          const updatedDropoffs = [...currentDropoffs, ...pendingDropoffs].filter(d => d);
-
-          // Build update object with only defined values
-          const updateData = {
-            dropoffs: updatedDropoffs,
-            riders: (activeRide.riders || 1) + (pendingRide.riders || 1),
-            combinedRides: [...(activeRide.combinedRides || []), pendingRideId]
-          };
-
-          // Only add patronNotes if we have the required fields
-          if (pendingRide.patronName && pendingRide.phone) {
-            const combinedNote = `Combined with ${pendingRide.patronName} (${pendingRide.phone})`;
-            updateData.patronNotes = activeRide.patronNotes
-              ? `${activeRide.patronNotes} | ${combinedNote}`
-              : combinedNote;
-          }
-
-          // Update active ride with new dropoffs and updated rider count
-          await updateDoc(doc(db, 'rides', activeRideId), updateData);
-
-          // Mark pending ride as completed/combined
+          // Simply assign the pending ride to the same car
+          // This keeps both rides separate with their own information
           await updateDoc(doc(db, 'rides', pendingRideId), {
-            status: 'combined',
-            combinedWithRideId: activeRideId,
-            completedAt: Timestamp.now()
+            status: 'active',
+            carNumber: activeRide.carNumber,
+            assignedAt: Timestamp.now()
           });
 
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
 
           setSnackbar({
             isOpen: true,
-            message: `Ride combined successfully. Car ${activeRide.carNumber} will now pick up both patrons.`,
+            message: `Ride assigned to Car ${activeRide.carNumber}. Both riders will show as separate active rides.`,
             type: 'success',
             onUndo: null
           });
@@ -1004,7 +973,7 @@ const RideManagement = () => {
           setAlertModal({
             isOpen: true,
             title: 'Error',
-            message: 'Error combining rides: ' + error.message
+            message: 'Error assigning ride: ' + error.message
           });
         }
       }
@@ -1965,7 +1934,7 @@ const RideManagement = () => {
                             Multi-Ride Opportunities ({multiRideSuggestions[ride.id].length})
                           </h4>
                           <p className="text-xs text-green-700 mb-2">
-                            This ride can be combined with an active ride for efficiency:
+                            Assign to same car as another rider (≤15 min detour):
                           </p>
                           <div className="space-y-2">
                             {multiRideSuggestions[ride.id].map((suggestion, idx) => (
@@ -1975,14 +1944,14 @@ const RideManagement = () => {
                                     Car {suggestion.carNumber} - {suggestion.activeRidePatron}
                                   </p>
                                   <p className="text-xs text-gray-600">
-                                    +{suggestion.detourMinutes} min detour
+                                    +{suggestion.detourMinutes} min detour (both show as separate rides)
                                   </p>
                                 </div>
                                 <button
                                   onClick={() => assignToActiveRide(ride.id, suggestion.activeRideId)}
                                   className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-xs font-semibold min-h-touch touch-manipulation"
                                 >
-                                  Combine
+                                  Assign
                                 </button>
                               </div>
                             ))}
