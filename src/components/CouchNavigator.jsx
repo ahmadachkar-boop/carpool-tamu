@@ -12,10 +12,12 @@ import { db } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, orderBy, updateDoc, doc, Timestamp, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
 import { useAuth } from '../AuthContext';
-import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff, X } from 'lucide-react';
+import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff, X, Wifi, WifiOff, CloudOff, RefreshCw } from 'lucide-react';
 import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission, initializeAudioContext } from '../notificationUtils';
+import { queueMessage, getMessageQueue, removeQueuedMessage, cacheLocation, getCachedLocation, addConnectionListener, isConnected, addFirestoreConnectionListener, setFirestoreConnected, getSyncStatus } from '../offlineUtils';
+import { hapticLight, hapticSuccess, hapticNewMessage, hapticMessageSent, hapticLocationEnabled, hapticError } from '../hapticUtils';
 import { Capacitor } from '@capacitor/core';
 
 // Memoized map component to prevent re-renders
@@ -172,7 +174,30 @@ const CouchNavigator = () => {
       capacitorNative: Capacitor.isNativePlatform()
     });
   }, []);
-  
+
+  // Connection status monitoring
+  useEffect(() => {
+    const unsubscribeConnection = addConnectionListener((online) => {
+      setIsOnline(online);
+      if (online) {
+        console.log('🟢 Back online - checking for queued messages');
+        setQueuedMessagesCount(getMessageQueue().length);
+      }
+    });
+
+    const unsubscribeFirestore = addFirestoreConnectionListener((connected) => {
+      setFirestoreConnectionState(connected);
+    });
+
+    // Initial queue check
+    setQueuedMessagesCount(getMessageQueue().length);
+
+    return () => {
+      unsubscribeConnection();
+      unsubscribeFirestore();
+    };
+  }, []);
+
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
   const { isLoaded: googleMapsLoaded, loadError: googleMapsError } = useGoogleMaps();
@@ -195,7 +220,14 @@ const CouchNavigator = () => {
   const [routeInfo, setRouteInfo] = useState(null);
   const [eta, setEta] = useState(null);
   const [hasAlwaysPermission, setHasAlwaysPermission] = useState(false);
-  
+
+  // Connection and offline state
+  const [isOnline, setIsOnline] = useState(true);
+  const [firestoreConnected, setFirestoreConnectionState] = useState(true);
+  const [queuedMessagesCount, setQueuedMessagesCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
   const messagesEndRef = useRef(null);
   const locationWatchId = useRef(null);
   const mapRef = useRef(null);
@@ -783,6 +815,7 @@ const CouchNavigator = () => {
               (viewMode === 'couch' && latestMessage.sender === 'navigator')) {
             showNotification('New Message', latestMessage.message);
             playNotificationSound();
+            hapticNewMessage(); // Haptic feedback for new message
           }
         }
         lastMessageCountRef.current = msgs.length;
@@ -1102,6 +1135,7 @@ const CouchNavigator = () => {
           localStorage.setItem('locationEnabled', 'true');
           setDebugStatus('✅ Native location enabled!');
           setLocationError('');
+          hapticLocationEnabled(); // Success haptic
           setTimeout(() => setDebugStatus(''), 3000);
           return;
         }
@@ -1150,6 +1184,7 @@ const CouchNavigator = () => {
       localStorage.setItem('locationEnabled', 'true');
       setDebugStatus('✅ Location enabled!');
       setLocationError('');
+      hapticLocationEnabled(); // Success haptic
       setTimeout(() => setDebugStatus(''), 3000);
       
     } catch (error) {
@@ -1238,7 +1273,8 @@ const CouchNavigator = () => {
     }
 
     setSendingMessage(true);
-    
+    hapticLight(); // Haptic feedback on button press
+
     const carNum = parseInt(selectedCar, 10);
 
     const messageData = {
@@ -1252,26 +1288,51 @@ const CouchNavigator = () => {
 
     console.log('✉️ Sending:', messageData);
 
+    // Check if online
+    if (!isOnline) {
+      console.log('📦 Offline - queuing message');
+      queueMessage(messageData);
+      setQueuedMessagesCount(getMessageQueue().length);
+      setDebugStatus('📦 Queued (offline)');
+      setNewMessage('');
+      hapticSuccess();
+      setTimeout(() => setDebugStatus(''), 2000);
+      setSendingMessage(false);
+      return;
+    }
+
     try {
       const docRef = await addDoc(collection(db, 'couchMessages'), messageData);
       console.log('✅ SUCCESS! Doc ID:', docRef.id);
-      
+
+      setFirestoreConnected(true); // Mark Firestore as connected
+
       setDebugStatus('✅ Sent!');
       setNewMessage('');
-      
+      hapticMessageSent(); // Success haptic
+
       setTimeout(() => setDebugStatus(''), 2000);
     } catch (error) {
       console.error('❌ SEND ERROR:', error);
-      
+
+      setFirestoreConnected(false); // Mark Firestore as disconnected
+
       let errorMsg = 'Failed: ';
       if (error.code === 'permission-denied') {
         errorMsg += 'Permission denied';
       } else if (error.code === 'unavailable') {
         errorMsg += 'Network unavailable';
+        // Queue the message for later
+        queueMessage(messageData);
+        setQueuedMessagesCount(getMessageQueue().length);
+        errorMsg = '📦 Queued (network unavailable)';
+        setNewMessage('');
+        hapticSuccess();
       } else {
         errorMsg += error.message;
+        hapticError();
       }
-      
+
       setDebugStatus(`❌ ${errorMsg}`);
       setTimeout(() => setDebugStatus(''), 5000);
     } finally {
@@ -1398,6 +1459,34 @@ const CouchNavigator = () => {
               <span className="hidden sm:inline">Notifications</span>
             </button>
             
+            {/* Connection Status Indicator */}
+            <div
+              className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap flex items-center gap-2 ${
+                isOnline && firestoreConnected
+                  ? 'bg-green-100 text-green-800'
+                  : !isOnline
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}
+              title={`Network: ${isOnline ? 'Online' : 'Offline'} | Firestore: ${firestoreConnected ? 'Connected' : 'Disconnected'}${queuedMessagesCount > 0 ? ` | ${queuedMessagesCount} queued` : ''}`}
+            >
+              {isOnline && firestoreConnected ? (
+                <Wifi size={16} />
+              ) : !isOnline ? (
+                <WifiOff size={16} />
+              ) : (
+                <CloudOff size={16} />
+              )}
+              <span className="hidden sm:inline">
+                {isOnline && firestoreConnected ? 'Online' : !isOnline ? 'Offline' : 'Syncing...'}
+              </span>
+              {queuedMessagesCount > 0 && (
+                <span className="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                  {queuedMessagesCount}
+                </span>
+              )}
+            </div>
+
             <button
               onClick={() => setShowDebug(!showDebug)}
               className="px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm bg-gray-800 text-white hover:bg-gray-700 transition whitespace-nowrap"
@@ -1432,6 +1521,17 @@ const CouchNavigator = () => {
               </div>
               <div>Messages Loaded: {messages.length}</div>
               <div>Location: {locationEnabled ? '🟢 Enabled' : '🔴 Disabled'}</div>
+              <div className={isOnline ? 'text-green-400' : 'text-red-400'}>
+                Network: {isOnline ? '🟢 Online' : '🔴 Offline'}
+              </div>
+              <div className={firestoreConnected ? 'text-green-400' : 'text-yellow-400'}>
+                Firestore: {firestoreConnected ? '🟢 Connected' : '🟡 Disconnected'}
+              </div>
+              {queuedMessagesCount > 0 && (
+                <div className="text-orange-400">
+                  Queued Messages: {queuedMessagesCount} 📦
+                </div>
+              )}
               {eta && (
                 <div className="text-purple-300">
                   ETA: {eta.durationText} to {eta.destination}
