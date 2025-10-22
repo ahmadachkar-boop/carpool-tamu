@@ -16,6 +16,7 @@ const RideManagement = () => {
   const [assigningRide, setAssigningRide] = useState(null);
   const [splittingRide, setSplittingRide] = useState(null);
   const [splitRiders, setSplitRiders] = useState({ ride1: 1, ride2: 1 });
+  const [eligibleCars, setEligibleCars] = useState({}); // { carNumber: { eligible: boolean, reason: string } }
   
   // NEW: Car status tracking
   const [carLocations, setCarLocations] = useState({});
@@ -383,8 +384,68 @@ const RideManagement = () => {
   // NEW: Determine if wait time is concerning
   const isLongWait = (minutes) => minutes >= 15;
 
-  const openAssignCar = (ride) => {
+  const openAssignCar = async (ride) => {
     setAssigningRide({ ...ride, selectedCar: '' });
+
+    // If single rider, check which cars are eligible
+    if (ride.riders === 1) {
+      try {
+        const ndrDoc = await getDoc(doc(db, 'ndrs', activeNDR.id));
+        const ndrData = ndrDoc.data();
+        const carEligibility = {};
+
+        // Check each car
+        for (let carNum = 1; carNum <= availableCars; carNum++) {
+          const carAssignments = ndrData.assignments?.cars?.[carNum] || [];
+
+          if (carAssignments.length < 2) {
+            carEligibility[carNum] = {
+              eligible: false,
+              reason: 'Needs 2+ members'
+            };
+            continue;
+          }
+
+          // Fetch car member details to check genders
+          const carMembers = [];
+          for (const memberId of carAssignments) {
+            const memberDoc = await getDoc(doc(db, 'members', memberId));
+            if (memberDoc.exists()) {
+              carMembers.push(memberDoc.data());
+            }
+          }
+
+          const hasMale = carMembers.some(m => {
+            const gender = m.gender?.toLowerCase();
+            return gender === 'male' || gender === 'm' || gender === 'man';
+          });
+
+          const hasFemale = carMembers.some(m => {
+            const gender = m.gender?.toLowerCase();
+            return gender === 'female' || gender === 'f' || gender === 'woman';
+          });
+
+          if (!hasMale || !hasFemale) {
+            carEligibility[carNum] = {
+              eligible: false,
+              reason: 'Needs opposite genders'
+            };
+          } else {
+            carEligibility[carNum] = {
+              eligible: true,
+              reason: ''
+            };
+          }
+        }
+
+        setEligibleCars(carEligibility);
+      } catch (error) {
+        console.error('Error checking car eligibility:', error);
+      }
+    } else {
+      // Multi-rider, all cars eligible
+      setEligibleCars({});
+    }
   };
 
   const assignCar = async () => {
@@ -917,11 +978,23 @@ const RideManagement = () => {
                     <div className="space-y-3">
                       <p className="font-semibold">Assign car to {ride.patronName}</p>
                       {assigningRide.riders === 1 && (
-                        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
-                          <p className="text-yellow-800 text-sm font-medium">
-                            ⚠️ Single rider rides MUST be assigned to a car with opposite gender members for safety.
-                          </p>
-                        </div>
+                        <>
+                          <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                            <p className="text-yellow-800 text-sm font-medium">
+                              ⚠️ Single rider rides MUST be assigned to a car with opposite gender members for safety.
+                            </p>
+                          </div>
+                          {Object.values(eligibleCars).every(car => !car.eligible) && (
+                            <div className="bg-red-50 border border-red-300 rounded-lg p-3">
+                              <p className="text-red-800 text-sm font-semibold">
+                                No cars are eligible! All cars need at least 2 members with opposite genders assigned.
+                              </p>
+                              <p className="text-red-700 text-xs mt-1">
+                                Please update car assignments in the NDR before accepting single rider rides.
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                       <select
                         value={assigningRide.selectedCar}
@@ -929,14 +1002,21 @@ const RideManagement = () => {
                         className="w-full px-3 py-2 border rounded"
                       >
                         <option value="">Select a car...</option>
-                        {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => (
-                          <option
-                            key={num}
-                            value={num}
-                          >
-                            Car {num}
-                          </option>
-                        ))}
+                        {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => {
+                          const carEligibility = eligibleCars[num];
+                          const isEligible = !carEligibility || carEligibility.eligible;
+                          const reason = carEligibility?.reason || '';
+
+                          return (
+                            <option
+                              key={num}
+                              value={num}
+                              disabled={!isEligible}
+                            >
+                              Car {num}{!isEligible ? ` (${reason})` : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                       <div className="flex gap-2">
                         <button
