@@ -16,8 +16,10 @@ import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, Message
 import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission, initializeAudioContext } from '../notificationUtils';
-import { queueMessage, getMessageQueue, removeQueuedMessage, cacheLocation, getCachedLocation, addConnectionListener, isConnected, addFirestoreConnectionListener, setFirestoreConnected, getSyncStatus } from '../offlineUtils';
+import { queueMessage, getMessageQueue, removeQueuedMessage, cacheLocation, getCachedLocation, addConnectionListener, isConnected, addFirestoreConnectionListener, setFirestoreConnected, getSyncStatus, syncQueuedMessages, isSyncInProgress, setSyncCallback, addAppResumeListener } from '../offlineUtils';
 import { hapticLight, hapticSuccess, hapticNewMessage, hapticMessageSent, hapticLocationEnabled, hapticError } from '../hapticUtils';
+import { markMessageDelivered, markMessageRead, handleTypingIndicator, listenToTypingStatus, getMessageStatusDisplay } from '../messageStatusUtils';
+import QueueManager from './QueueManager';
 import { Capacitor } from '@capacitor/core';
 
 // Memoized map component to prevent re-renders
@@ -153,9 +155,25 @@ const MessagesDisplay = memo(({ messages, messagesEndRef, viewMode }) => {
                   : msg.senderName}
               </p>
               <p className="text-sm">{msg.message}</p>
-              <p className="text-xs opacity-60 mt-1">
-                {msg.timestamp?.toLocaleTimeString()}
-              </p>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <p className="text-xs opacity-60">
+                  {msg.timestamp?.toLocaleTimeString()}
+                </p>
+                {(() => {
+                  const status = getMessageStatusDisplay(msg, viewMode);
+                  if (status) {
+                    return (
+                      <span
+                        className={`text-xs ${status.color}`}
+                        title={status.tooltip}
+                      >
+                        {status.icon}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
           </div>
         ))
@@ -175,13 +193,60 @@ const CouchNavigator = () => {
     });
   }, []);
 
+  // Auto-sync queued messages function
+  const syncMessages = async () => {
+    if (!activeNDR || isSyncInProgress()) {
+      return;
+    }
+
+    setIsSyncing(true);
+    console.log('🔄 Starting auto-sync...');
+
+    try {
+      const result = await syncQueuedMessages(async (messageData) => {
+        // Send queued message to Firestore
+        await addDoc(collection(db, 'couchMessages'), messageData);
+      });
+
+      if (result.synced > 0) {
+        setDebugStatus(`✅ Synced ${result.synced} message(s)`);
+        hapticSuccess();
+        console.log(`✅ Successfully synced ${result.synced} messages`);
+      }
+
+      if (result.failed > 0) {
+        setDebugStatus(`⚠️ ${result.failed} message(s) failed to sync`);
+        console.warn(`⚠️ ${result.failed} messages failed to sync`);
+      }
+
+      // Update queue count
+      setQueuedMessagesCount(getMessageQueue().length);
+      setLastSyncTime(new Date());
+
+      setTimeout(() => setDebugStatus(''), 3000);
+    } catch (error) {
+      console.error('❌ Sync error:', error);
+      setDebugStatus('❌ Sync failed');
+      setTimeout(() => setDebugStatus(''), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Connection status monitoring
   useEffect(() => {
     const unsubscribeConnection = addConnectionListener((online) => {
       setIsOnline(online);
       if (online) {
         console.log('🟢 Back online - checking for queued messages');
-        setQueuedMessagesCount(getMessageQueue().length);
+        const queueLength = getMessageQueue().length;
+        setQueuedMessagesCount(queueLength);
+
+        // Auto-sync when connection restored
+        if (queueLength > 0 && activeNDR) {
+          console.log('🔄 Auto-syncing queued messages...');
+          setTimeout(() => syncMessages(), 1000); // Small delay to ensure Firestore is ready
+        }
       }
     });
 
@@ -192,11 +257,42 @@ const CouchNavigator = () => {
     // Initial queue check
     setQueuedMessagesCount(getMessageQueue().length);
 
+    // Register sync callback for app resume
+    setSyncCallback(() => {
+      if (activeNDR) {
+        syncMessages();
+      }
+    });
+
     return () => {
       unsubscribeConnection();
       unsubscribeFirestore();
     };
-  }, []);
+  }, [activeNDR]);
+
+  // App resume detection
+  useEffect(() => {
+    const unsubscribeResume = addAppResumeListener(() => {
+      console.log('📱 App resumed - reconnecting...');
+
+      // Update queue count
+      setQueuedMessagesCount(getMessageQueue().length);
+
+      // Load cached location if available
+      const cachedLoc = getCachedLocation();
+      if (cachedLoc && selectedCar && locationEnabled) {
+        console.log('📍 Using cached location from resume');
+        setCarLocations(prev => ({
+          ...prev,
+          [selectedCar]: cachedLoc
+        }));
+      }
+    });
+
+    return () => {
+      unsubscribeResume();
+    };
+  }, [selectedCar, locationEnabled]);
 
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
@@ -227,6 +323,10 @@ const CouchNavigator = () => {
   const [queuedMessagesCount, setQueuedMessagesCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [showQueueManager, setShowQueueManager] = useState(false);
+
+  // Typing indicator state
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
 
   const messagesEndRef = useRef(null);
   const locationWatchId = useRef(null);
@@ -802,10 +902,13 @@ const CouchNavigator = () => {
             sender: data.sender,
             senderName: data.senderName || (data.sender === 'couch' ? 'Couch' : `Car ${carNum}`),
             message: data.message,
-            timestamp: data.timestamp?.toDate()
+            timestamp: data.timestamp?.toDate(),
+            status: data.status,
+            deliveredAt: data.deliveredAt,
+            readAt: data.readAt
           };
         });
-        
+
         console.log(`📬 Received ${msgs.length} messages for car ${carNum}`);
         setMessages(msgs);
 
@@ -816,8 +919,21 @@ const CouchNavigator = () => {
             showNotification('New Message', latestMessage.message);
             playNotificationSound();
             hapticNewMessage(); // Haptic feedback for new message
+
+            // Mark message as delivered
+            markMessageDelivered(latestMessage.id);
           }
         }
+
+        // Mark all received messages as read (they're visible in the chat)
+        msgs.forEach(msg => {
+          const isReceivedMessage = (viewMode === 'navigator' && msg.sender === 'couch') ||
+                                     (viewMode === 'couch' && msg.sender === 'navigator');
+          if (isReceivedMessage && !msg.readAt) {
+            markMessageRead(msg.id);
+          }
+        });
+
         lastMessageCountRef.current = msgs.length;
       },
       (error) => {
@@ -826,6 +942,26 @@ const CouchNavigator = () => {
     );
 
     return () => unsubscribe();
+  }, [activeNDR, selectedCar, viewMode]);
+
+  // Typing indicator listener
+  useEffect(() => {
+    if (!activeNDR || !selectedCar) {
+      setIsOtherTyping(false);
+      return;
+    }
+
+    const carNum = parseInt(selectedCar, 10);
+    console.log(`⌨️ Setting up typing listener for car ${carNum}`);
+
+    const unsubscribe = listenToTypingStatus(activeNDR.id, carNum, viewMode, (isTyping) => {
+      setIsOtherTyping(isTyping);
+    });
+
+    return () => {
+      unsubscribe();
+      setIsOtherTyping(false);
+    };
   }, [activeNDR, selectedCar, viewMode]);
 
   useEffect(() => {
@@ -972,15 +1108,24 @@ const CouchNavigator = () => {
         console.log('✅ Location updated in Firestore');
       }
       
-      lastLocationRef.current = { 
-        latitude, 
-        longitude, 
-        lastWriteSuccess: true 
+      lastLocationRef.current = {
+        latitude,
+        longitude,
+        lastWriteSuccess: true
       };
-      
+
+      // Cache location for offline recovery
+      cacheLocation({
+        latitude,
+        longitude,
+        accuracy,
+        carNumber: parseInt(selectedCar, 10),
+        ndrId: activeNDR.id
+      });
+
       setLastLocationUpdate(new Date());
       setLocationError('');
-      
+
     } catch (error) {
       console.error('❌ Error updating location to Firestore:', error);
       
@@ -1266,6 +1411,42 @@ const CouchNavigator = () => {
     }
   };
 
+  // Queue manager handlers
+  const handleRetryMessage = async (messageData) => {
+    if (!isOnline || !firestoreConnected) {
+      alert('Cannot retry - you are offline');
+      return;
+    }
+
+    try {
+      // Send the message
+      await addDoc(collection(db, 'couchMessages'), messageData);
+
+      // Remove from queue on success
+      removeQueuedMessage(messageData.id);
+      setQueuedMessagesCount(getMessageQueue().length);
+
+      hapticSuccess();
+      console.log('✅ Message retried successfully');
+    } catch (error) {
+      console.error('❌ Retry failed:', error);
+      hapticError();
+      alert(`Failed to retry message: ${error.message}`);
+    }
+  };
+
+  const handleDeleteMessage = (messageId) => {
+    removeQueuedMessage(messageId);
+    setQueuedMessagesCount(getMessageQueue().length);
+    hapticLight();
+    console.log('🗑️ Message deleted from queue');
+  };
+
+  const handleSyncQueue = async () => {
+    await syncMessages();
+    // Queue manager will re-render automatically as queue count updates
+  };
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedCar || !activeNDR) {
       console.log('Message send blocked');
@@ -1310,6 +1491,11 @@ const CouchNavigator = () => {
       setDebugStatus('✅ Sent!');
       setNewMessage('');
       hapticMessageSent(); // Success haptic
+
+      // Clear typing indicator
+      if (activeNDR && selectedCar) {
+        handleTypingIndicator(activeNDR.id, carNum, viewMode, false);
+      }
 
       setTimeout(() => setDebugStatus(''), 2000);
     } catch (error) {
@@ -1459,16 +1645,22 @@ const CouchNavigator = () => {
               <span className="hidden sm:inline">Notifications</span>
             </button>
             
-            {/* Connection Status Indicator */}
-            <div
+            {/* Connection Status Indicator - Clickable to open Queue Manager */}
+            <button
+              onClick={() => {
+                if (queuedMessagesCount > 0) {
+                  setShowQueueManager(true);
+                  hapticLight();
+                }
+              }}
               className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap flex items-center gap-2 ${
                 isOnline && firestoreConnected
                   ? 'bg-green-100 text-green-800'
                   : !isOnline
                   ? 'bg-red-100 text-red-800'
                   : 'bg-yellow-100 text-yellow-800'
-              }`}
-              title={`Network: ${isOnline ? 'Online' : 'Offline'} | Firestore: ${firestoreConnected ? 'Connected' : 'Disconnected'}${queuedMessagesCount > 0 ? ` | ${queuedMessagesCount} queued` : ''}`}
+              } ${queuedMessagesCount > 0 ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'}`}
+              title={`Network: ${isOnline ? 'Online' : 'Offline'} | Firestore: ${firestoreConnected ? 'Connected' : 'Disconnected'}${queuedMessagesCount > 0 ? ` | Click to view ${queuedMessagesCount} queued message(s)` : ''}`}
             >
               {isOnline && firestoreConnected ? (
                 <Wifi size={16} />
@@ -1481,11 +1673,11 @@ const CouchNavigator = () => {
                 {isOnline && firestoreConnected ? 'Online' : !isOnline ? 'Offline' : 'Syncing...'}
               </span>
               {queuedMessagesCount > 0 && (
-                <span className="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                <span className="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs animate-pulse">
                   {queuedMessagesCount}
                 </span>
               )}
-            </div>
+            </button>
 
             <button
               onClick={() => setShowDebug(!showDebug)}
@@ -1769,18 +1961,47 @@ const CouchNavigator = () => {
                     Messages with Couch
                   </h3>
                   
-                  <MessagesDisplay 
+                  <MessagesDisplay
                     messages={messages}
                     messagesEndRef={messagesEndRef}
                     viewMode={viewMode}
                   />
 
+                  {/* Typing indicator */}
+                  {isOtherTyping && (
+                    <div className="text-xs text-gray-500 italic mb-2 px-4">
+                      {viewMode === 'navigator' ? 'Couch' : 'Navigator'} is typing...
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={(e) => {
+                        setNewMessage(e.target.value);
+                        // Send typing indicator
+                        if (activeNDR && selectedCar) {
+                          handleTypingIndicator(
+                            activeNDR.id,
+                            parseInt(selectedCar, 10),
+                            viewMode,
+                            e.target.value.length > 0
+                          );
+                        }
+                      }}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      onBlur={() => {
+                        // Clear typing indicator when focus lost
+                        if (activeNDR && selectedCar) {
+                          handleTypingIndicator(
+                            activeNDR.id,
+                            parseInt(selectedCar, 10),
+                            viewMode,
+                            false
+                          );
+                        }
+                      }}
                       placeholder="Type a message..."
                       className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none"
                     />
@@ -1889,18 +2110,47 @@ const CouchNavigator = () => {
                     Messages with Car {selectedCar}
                   </h3>
                   
-                  <MessagesDisplay 
+                  <MessagesDisplay
                     messages={messages}
                     messagesEndRef={messagesEndRef}
                     viewMode={viewMode}
                   />
 
+                  {/* Typing indicator */}
+                  {isOtherTyping && (
+                    <div className="text-xs text-gray-500 italic mb-2 px-4">
+                      {viewMode === 'navigator' ? 'Couch' : 'Navigator'} is typing...
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
+                      onChange={(e) => {
+                        setNewMessage(e.target.value);
+                        // Send typing indicator
+                        if (activeNDR && selectedCar) {
+                          handleTypingIndicator(
+                            activeNDR.id,
+                            parseInt(selectedCar, 10),
+                            viewMode,
+                            e.target.value.length > 0
+                          );
+                        }
+                      }}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      onBlur={() => {
+                        // Clear typing indicator when focus lost
+                        if (activeNDR && selectedCar) {
+                          handleTypingIndicator(
+                            activeNDR.id,
+                            parseInt(selectedCar, 10),
+                            viewMode,
+                            false
+                          );
+                        }
+                      }}
                       placeholder="Type a message..."
                       className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none"
                     />
@@ -1922,6 +2172,15 @@ const CouchNavigator = () => {
           </div>
         )}
       </div>
+
+      {/* Queue Manager Modal */}
+      <QueueManager
+        isOpen={showQueueManager}
+        onClose={() => setShowQueueManager(false)}
+        onSync={handleSyncQueue}
+        onRetryMessage={handleRetryMessage}
+        onDeleteMessage={handleDeleteMessage}
+      />
     </div>
   );
 };

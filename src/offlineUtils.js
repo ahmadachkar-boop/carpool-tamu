@@ -219,3 +219,120 @@ export const getSyncStatus = () => {
     needsSync: queuedMessages > 0
   };
 };
+
+// Auto-Sync Functionality
+let syncCallback = null;
+let isSyncing = false;
+
+export const setSyncCallback = (callback) => {
+  syncCallback = callback;
+  console.log('✅ Auto-sync callback registered');
+};
+
+export const syncQueuedMessages = async (sendFunction) => {
+  if (isSyncing) {
+    console.log('⏸️ Sync already in progress');
+    return { success: false, reason: 'already_syncing' };
+  }
+
+  if (!isOnline || !firestoreConnected) {
+    console.log('⏸️ Cannot sync - offline or Firestore disconnected');
+    return { success: false, reason: 'offline' };
+  }
+
+  const queue = getMessageQueue();
+  if (queue.length === 0) {
+    console.log('✅ No messages to sync');
+    return { success: true, synced: 0 };
+  }
+
+  isSyncing = true;
+  console.log(`🔄 Starting sync of ${queue.length} queued messages...`);
+
+  const results = {
+    success: 0,
+    failed: 0,
+    errors: []
+  };
+
+  for (const queuedMessage of queue) {
+    try {
+      // Call the provided send function (should be addDoc from Firebase)
+      await sendFunction(queuedMessage);
+
+      // Remove successfully sent message from queue
+      removeQueuedMessage(queuedMessage.id);
+      results.success++;
+
+      console.log(`✅ Synced message: ${queuedMessage.message.substring(0, 30)}...`);
+    } catch (error) {
+      console.error(`❌ Failed to sync message:`, error);
+      results.failed++;
+      results.errors.push({
+        message: queuedMessage,
+        error: error.message
+      });
+
+      // If we get permission denied or other fatal errors, stop syncing
+      if (error.code === 'permission-denied') {
+        console.error('❌ Permission denied - stopping sync');
+        break;
+      }
+    }
+  }
+
+  isSyncing = false;
+
+  console.log(`🔄 Sync complete: ${results.success} sent, ${results.failed} failed`);
+
+  return {
+    success: true,
+    synced: results.success,
+    failed: results.failed,
+    errors: results.errors
+  };
+};
+
+export const isSyncInProgress = () => {
+  return isSyncing;
+};
+
+// App Resume Detection
+let visibilityListeners = [];
+let appResumeListeners = [];
+
+export const addAppResumeListener = (callback) => {
+  appResumeListeners.push(callback);
+
+  return () => {
+    appResumeListeners = appResumeListeners.filter(cb => cb !== callback);
+  };
+};
+
+const handleVisibilityChange = () => {
+  if (!document.hidden) {
+    console.log('📱 App resumed from background');
+    appResumeListeners.forEach(callback => callback());
+
+    // Trigger sync callback if registered and online
+    if (syncCallback && isOnline && firestoreConnected) {
+      const queue = getMessageQueue();
+      if (queue.length > 0) {
+        console.log('🔄 Auto-triggering sync after app resume');
+        syncCallback();
+      }
+    }
+  }
+};
+
+// Initialize visibility monitoring
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+// Cleanup visibility monitoring
+export const cleanupVisibilityMonitoring = () => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }
+};
