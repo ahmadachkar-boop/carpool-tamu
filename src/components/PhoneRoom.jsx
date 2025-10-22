@@ -1038,7 +1038,7 @@ const PhoneRoom = () => {
     return (
       <div className="space-y-6 p-4 md:p-0">
         <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Phone Room</h2>
-        <div className="bg-white p-12 rounded-2xl shadow-xl text-center">
+        <div className="bg-white p-4 md:p-8 lg:p-12 rounded-2xl shadow-xl text-center">
           <div className="w-16 h-16 border-4 border-[#79F200] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
@@ -1050,7 +1050,7 @@ const PhoneRoom = () => {
     return (
       <div className="space-y-6 p-4 md:p-0">
         <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Phone Room</h2>
-        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-2xl p-8 text-center">
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-2xl p-4 md:p-8 text-center">
           <AlertCircle className="mx-auto mb-4 text-yellow-600" size={64} />
           <h3 className="text-xl font-bold text-gray-800 mb-2">No Active NDR</h3>
           <p className="text-gray-600 mb-4">
@@ -1074,16 +1074,16 @@ const PhoneRoom = () => {
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
           <button
             onClick={() => setShowBlacklistViewer(true)}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 border-2 border-gray-300"
+            className="px-4 py-3 md:py-2 min-h-touch bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-900 rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 border-2 border-gray-300 touch-manipulation"
           >
-            <Shield size={16} />
+            <Shield size={18} />
             View Blacklists
           </button>
           <button
             onClick={() => setShowBlacklistModal(true)}
-            className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 shadow-lg"
+            className="px-4 py-3 md:py-2 min-h-touch bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white rounded-xl transition font-medium text-sm flex items-center justify-center gap-2 shadow-lg touch-manipulation"
           >
-            <AlertTriangle size={16} />
+            <AlertTriangle size={18} />
             Request Blacklist
           </button>
           <div className="bg-[#79F200] px-6 py-3 rounded-xl shadow-lg">
@@ -1289,7 +1289,7 @@ const PhoneRoom = () => {
               
               {/* NEW: Common Pickups */}
               {showCommonPickups && commonLocations.length > 0 && (
-                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-80 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-48 md:max-h-64 lg:max-h-80 overflow-y-auto">
                   <div className="p-3 bg-[#79F200] sticky top-0">
                     <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
                       <TrendingUp size={16} />
@@ -1318,7 +1318,7 @@ const PhoneRoom = () => {
               )}
               
               {showPickupSuggestions && pickupSuggestions.length > 0 && (
-                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-40 md:max-h-56 lg:max-h-64 overflow-y-auto">
                   {pickupSuggestions.map((suggestion, index) => (
                     <div
                       key={index}
@@ -1373,7 +1373,7 @@ const PhoneRoom = () => {
                       
                       {/* NEW: Common Dropoffs */}
                       {showCommonDropoffs[index] && commonLocations.length > 0 && (
-                        <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-80 overflow-y-auto">
+                        <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-48 md:max-h-64 lg:max-h-80 overflow-y-auto">
                           <div className="p-3 bg-[#79F200] sticky top-0">
                             <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
                               <TrendingUp size={16} />
@@ -1404,7 +1404,7 @@ const PhoneRoom = () => {
                       )}
                       
                       {showDropoffSuggestions[index] && dropoffSuggestions[index]?.length > 0 && (
-                        <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                        <div className="absolute z-10 w-full mt-2 bg-white border-2 border-[#79F200] rounded-xl shadow-2xl max-h-40 md:max-h-56 lg:max-h-64 overflow-y-auto">
                           {dropoffSuggestions[index].map((suggestion, suggestionIndex) => (
                             <div
                               key={suggestionIndex}

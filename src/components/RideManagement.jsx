@@ -870,19 +870,19 @@ const RideManagement = () => {
         <div className="flex border-b border-gray-200">
           <button
             onClick={() => setActiveTab('pending')}
-            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'pending' ? 'border-b-2 border-blue-600 text-blue-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-2 sm:px-4 md:px-6 py-3 md:py-4 text-center transition text-xs sm:text-sm md:text-base min-h-touch touch-manipulation ${activeTab === 'pending' ? 'border-b-2 border-blue-600 text-blue-600 font-medium' : 'text-gray-600'}`}
           >
             Pending ({rides.pending.length})
           </button>
           <button
             onClick={() => setActiveTab('active')}
-            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'active' ? 'border-b-2 border-purple-600 text-purple-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-2 sm:px-4 md:px-6 py-3 md:py-4 text-center transition text-xs sm:text-sm md:text-base min-h-touch touch-manipulation ${activeTab === 'active' ? 'border-b-2 border-purple-600 text-purple-600 font-medium' : 'text-gray-600'}`}
           >
             Active ({rides.active.length})
           </button>
           <button
             onClick={() => setActiveTab('completed')}
-            className={`flex-1 px-6 py-4 text-center transition ${activeTab === 'completed' ? 'border-b-2 border-green-600 text-green-600 font-medium' : 'text-gray-600'}`}
+            className={`flex-1 px-2 sm:px-4 md:px-6 py-3 md:py-4 text-center transition text-xs sm:text-sm md:text-base min-h-touch touch-manipulation ${activeTab === 'completed' ? 'border-b-2 border-green-600 text-green-600 font-medium' : 'text-gray-600'}`}
           >
             History ({rides.completed.length})
           </button>
@@ -972,13 +972,13 @@ const RideManagement = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={saveEdit}
-                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                          className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 touch-manipulation"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setEditingRide(null)}
-                          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation"
                         >
                           Cancel
                         </button>
@@ -1049,13 +1049,13 @@ const RideManagement = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={assignCar}
-                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                          className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 touch-manipulation"
                         >
                           Assign
                         </button>
                         <button
                           onClick={() => setAssigningRide(null)}
-                          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation"
                         >
                           Cancel
                         </button>
@@ -1229,26 +1229,26 @@ const RideManagement = () => {
                           <>
                             <button
                               onClick={() => openAssignCar(ride)}
-                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 text-sm touch-manipulation"
                             >
                               Assign Car
                             </button>
                             <button
                               onClick={() => openSplitRide(ride)}
-                              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 text-sm flex items-center gap-1 touch-manipulation"
                             >
                               <Split size={16} />
                               Split
                             </button>
                             <button
                               onClick={() => startEdit(ride)}
-                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-gray-200 text-gray-700 rounded hover:bg-gray-300 active:bg-gray-400 text-sm touch-manipulation"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => cancelRide(ride.id)}
-                              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-red-500 text-white rounded hover:bg-red-600 active:bg-red-700 text-sm touch-manipulation"
                             >
                               Cancel
                             </button>
@@ -1260,32 +1260,32 @@ const RideManagement = () => {
                             {!ride.pickedUpAt && (
                               <button
                                 onClick={() => startRide(ride.id)}
-                                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                                className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 text-sm touch-manipulation"
                               >
                                 Mark Picked Up
                               </button>
                             )}
                             <button
                               onClick={() => completeRide(ride.id)}
-                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 text-sm touch-manipulation"
                             >
                               Complete
                             </button>
                             <button
                               onClick={() => startEdit(ride)}
-                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-gray-200 text-gray-700 rounded hover:bg-gray-300 active:bg-gray-400 text-sm touch-manipulation"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => cancelRide(ride.id)}
-                              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-red-500 text-white rounded hover:bg-red-600 active:bg-red-700 text-sm touch-manipulation"
                             >
                               Cancel
                             </button>
                             <button
                               onClick={() => terminateRide(ride.id)}
-                              className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm"
+                              className="px-4 py-3 md:py-2 min-h-touch bg-orange-500 text-white rounded hover:bg-orange-600 active:bg-orange-700 text-sm touch-manipulation"
                             >
                               Terminate
                             </button>
