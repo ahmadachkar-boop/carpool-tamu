@@ -2,9 +2,23 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs, documentId } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2 } from 'lucide-react';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2, Search, Filter, SortAsc } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { isMale, isFemale } from '../utils/genderUtils';
+import { formatTime, formatDateTime, calculateWaitTime, formatWaitTime, isLongWait } from '../utils/timeUtils';
+import { logError, logWarning } from '../utils/errorLogger';
+
+// CONSTANTS: Extracted magic numbers for maintainability
+const BUFFER_MINUTES_PER_STOP = 2; // Minutes to add per waypoint stop
+const FALLBACK_ETA_FREE_CAR = 10; // Default ETA when car location unknown (free car)
+const FALLBACK_ETA_BUSY_CAR = 30; // Default ETA when calculation fails (busy car)
+const ETA_DEBOUNCE_MS = 45000; // 45 seconds between ETA recalculations
+const ETA_CACHE_MS = 300000; // 5 minutes ETA cache duration
+const API_RATE_LIMIT_PER_HOUR = 500; // Max Google Maps API calls per hour
+const API_RESET_INTERVAL_MS = 3600000; // 1 hour in milliseconds
+const LONG_WAIT_THRESHOLD_MINUTES = 15; // Minutes before wait is considered long
+const CLOCK_UPDATE_INTERVAL_MS = 1000; // Update clock every second
+const MAX_PENDING_RIDES_FOR_ETA = 3; // Only calculate ETA for top N pending rides
 
 // Custom Modal Components (replaces alert/prompt/confirm)
 const Modal = ({ isOpen, onClose, title, children, actions }) => {
@@ -134,6 +148,11 @@ const RideManagement = () => {
     splittingRide: false
   });
 
+  // Search and filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterOption, setFilterOption] = useState('all'); // all, single, group
+  const [sortOption, setSortOption] = useState('time'); // time, riders, wait
+
   // Track component mount/unmount to prevent memory leaks
   useEffect(() => {
     isMounted.current = true;
@@ -151,27 +170,30 @@ const RideManagement = () => {
 
     const calculateAllETAs = async () => {
       // Reset API call counter every hour
-      if (Date.now() - lastApiReset.current > 3600000) {
+      if (Date.now() - lastApiReset.current > API_RESET_INTERVAL_MS) {
         apiCallCount.current = 0;
         lastApiReset.current = Date.now();
       }
 
-      // Rate limiting: max 500 API calls per hour
-      if (apiCallCount.current > 500) {
-        console.warn('Google Maps API rate limit reached. Skipping ETA calculation.');
+      // Rate limiting
+      if (apiCallCount.current > API_RATE_LIMIT_PER_HOUR) {
+        logWarning('ETA Calculation', 'Google Maps API rate limit reached', {
+          currentCount: apiCallCount.current,
+          limit: API_RATE_LIMIT_PER_HOUR
+        });
         return;
       }
 
       const newETAs = {};
       const directionsService = new window.google.maps.DirectionsService();
 
-      // OPTIMIZATION: Only calculate for top 3 pending rides
-      const ridesToCalculate = rides.pending.slice(0, 3);
+      // OPTIMIZATION: Only calculate for top N pending rides
+      const ridesToCalculate = rides.pending.slice(0, MAX_PENDING_RIDES_FOR_ETA);
 
       for (const ride of ridesToCalculate) {
-        // Check if we have cached result less than 5 minutes old
+        // Check if we have cached result
         const cached = etaCache.current[ride.id];
-        if (cached && Date.now() - cached.timestamp < 300000) {
+        if (cached && Date.now() - cached.timestamp < ETA_CACHE_MS) {
           newETAs[ride.id] = cached;
           continue;
         }
@@ -229,13 +251,13 @@ const RideManagement = () => {
                 } catch (error) {
                   carAvailability.push({
                     carNumber: carNum,
-                    availableInMinutes: 10
+                    availableInMinutes: FALLBACK_ETA_FREE_CAR
                   });
                 }
               } else {
                 carAvailability.push({
                   carNumber: carNum,
-                  availableInMinutes: 10
+                  availableInMinutes: FALLBACK_ETA_FREE_CAR
                 });
               }
             } else {
@@ -290,7 +312,7 @@ const RideManagement = () => {
                   totalCurrentRouteTime += duration.value;
                 });
 
-                const bufferMinutes = (waypoints.length + 1) * 2;
+                const bufferMinutes = (waypoints.length + 1) * BUFFER_MINUTES_PER_STOP;
                 const currentRouteMinutes = Math.ceil(totalCurrentRouteTime / 60) + bufferMinutes;
 
                 apiCallCount.current++; // Increment API call counter
@@ -326,7 +348,7 @@ const RideManagement = () => {
               } catch (error) {
                 carAvailability.push({
                   carNumber: carNum,
-                  availableInMinutes: 30
+                  availableInMinutes: FALLBACK_ETA_BUSY_CAR
                 });
               }
             }
@@ -350,7 +372,7 @@ const RideManagement = () => {
             etaCache.current[ride.id] = etaData;
           }
         } catch (error) {
-          console.error(`Error calculating ETA for ride ${ride.id}:`, error);
+          logError('ETA Calculation', error, { rideId: ride.id });
           newETAs[ride.id] = {
             minutes: null,
             fastestCar: null,
@@ -365,16 +387,16 @@ const RideManagement = () => {
       }
     };
 
-    // OPTIMIZATION: Debounce increased from 2s to 45s to reduce API calls
-    const timer = setTimeout(calculateAllETAs, 45000);
+    // OPTIMIZATION: Debounce increased to reduce API calls
+    const timer = setTimeout(calculateAllETAs, ETA_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
 
-  // NEW: Update current time every second for timer displays
+  // NEW: Update current time for timer displays
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
-    }, 1000);
+    }, CLOCK_UPDATE_INTERVAL_MS);
 
     return () => clearInterval(timer);
   }, []);
@@ -457,7 +479,7 @@ const RideManagement = () => {
     let unsubPending, unsubActive, unsubCompleted;
 
     const pendingQuery = query(ridesRef, where('status', '==', 'pending'), where('ndrId', '==', activeNDR.id));
-    unsubPending = onSnapshot(pendingQuery, 
+    unsubPending = onSnapshot(pendingQuery,
       (snapshot) => {
         const pendingRides = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -467,18 +489,18 @@ const RideManagement = () => {
             requestedAt: data.requestedAt?.toDate() || new Date()
           };
         }).sort((a, b) => a.requestedAt - b.requestedAt);
-        
+
         setRides(prev => ({ ...prev, pending: pendingRides }));
         setLoading(false);
       },
       (error) => {
-        console.error('Error in pending query:', error);
+        logError('Pending Rides Query', error);
         setLoading(false);
       }
     );
 
     const activeQuery = query(ridesRef, where('status', '==', 'active'), where('ndrId', '==', activeNDR.id));
-    unsubActive = onSnapshot(activeQuery, 
+    unsubActive = onSnapshot(activeQuery,
       (snapshot) => {
         const activeRides = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -490,16 +512,16 @@ const RideManagement = () => {
             pickedUpAt: data.pickedUpAt?.toDate() || null
           };
         }).sort((a, b) => b.requestedAt - a.requestedAt);
-        
+
         setRides(prev => ({ ...prev, active: activeRides }));
       },
       (error) => {
-        console.error('Error in active query:', error);
+        logError('Active Rides Query', error);
       }
     );
 
     const completedQuery = query(ridesRef, where('status', 'in', ['completed', 'cancelled', 'terminated']), where('ndrId', '==', activeNDR.id));
-    unsubCompleted = onSnapshot(completedQuery, 
+    unsubCompleted = onSnapshot(completedQuery,
       (snapshot) => {
         const completedRides = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -512,11 +534,11 @@ const RideManagement = () => {
             completedAt: data.completedAt?.toDate() || new Date()
           };
         }).sort((a, b) => b.completedAt - a.completedAt);
-        
+
         setRides(prev => ({ ...prev, completed: completedRides }));
       },
       (error) => {
-        console.error('Error in completed query:', error);
+        logError('Completed Rides Query', error);
       }
     );
 
@@ -526,23 +548,6 @@ const RideManagement = () => {
       if (unsubCompleted) unsubCompleted();
     };
   }, [activeNDR]);
-
-  // NEW: Calculate wait time in minutes
-  const calculateWaitTime = (requestedAt) => {
-    if (!requestedAt) return 0;
-    const diffMs = currentTime - requestedAt;
-    return Math.floor(diffMs / (1000 * 60));
-  };
-
-  // NEW: Format wait time display
-  const formatWaitTime = (minutes) => {
-    if (minutes < 1) return '<1 min';
-    if (minutes === 1) return '1 min';
-    return `${minutes} mins`;
-  };
-
-  // NEW: Determine if wait time is concerning
-  const isLongWait = (minutes) => minutes >= 15;
 
   const openAssignCar = async (ride) => {
     setAssigningRide({ ...ride, selectedCar: '' });
@@ -624,7 +629,7 @@ const RideManagement = () => {
 
         setEligibleCars(carEligibility);
       } catch (error) {
-        console.error('Error checking car eligibility:', error);
+        logError('Car Eligibility Check', error, { rideId: ride.id });
       } finally {
         setCheckingEligibility(false);
       }
@@ -734,7 +739,7 @@ const RideManagement = () => {
       setAssigningRide(null);
       setLoadingStates(prev => ({ ...prev, assigningCar: false }));
     } catch (error) {
-      console.error('Error assigning car:', error);
+      logError('Assign Car', error, { rideId: assigningRide.id, carNumber: assigningRide.selectedCar });
       setLoadingStates(prev => ({ ...prev, assigningCar: false }));
       setAlertModal({
         isOpen: true,
@@ -758,7 +763,7 @@ const RideManagement = () => {
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setLoadingStates(prev => ({ ...prev, startingRide: { ...prev.startingRide, [rideId]: false } }));
         } catch (error) {
-          console.error('Error starting ride:', error);
+          logError('Start Ride', error, { rideId });
           setLoadingStates(prev => ({ ...prev, startingRide: { ...prev.startingRide, [rideId]: false } }));
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setAlertModal({
@@ -786,7 +791,7 @@ const RideManagement = () => {
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
         } catch (error) {
-          console.error('Error completing ride:', error);
+          logError('Complete Ride', error, { rideId });
           setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setAlertModal({
@@ -817,7 +822,7 @@ const RideManagement = () => {
           setPromptValue('');
           setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
         } catch (error) {
-          console.error('Error cancelling ride:', error);
+          logError('Cancel Ride', error, { rideId, reason });
           setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
@@ -849,7 +854,7 @@ const RideManagement = () => {
           setPromptValue('');
           setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
         } catch (error) {
-          console.error('Error terminating ride:', error);
+          logError('Terminate Ride', error, { rideId, reason });
           setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
@@ -956,7 +961,7 @@ const RideManagement = () => {
       setEditingRide(null);
       setLoadingStates(prev => ({ ...prev, savingEdit: false }));
     } catch (error) {
-      console.error('Error updating ride:', error);
+      logError('Update Ride', error, { rideId: editingRide.id });
       setLoadingStates(prev => ({ ...prev, savingEdit: false }));
       setAlertModal({
         isOpen: true,
@@ -1032,7 +1037,7 @@ const RideManagement = () => {
       setSplitRiders({ ride1: 1, ride2: 1 });
       setLoadingStates(prev => ({ ...prev, splittingRide: false }));
     } catch (error) {
-      console.error('Error splitting ride:', error);
+      logError('Split Ride', error, { rideId: splittingRide.id, split: splitRiders });
       setLoadingStates(prev => ({ ...prev, splittingRide: false }));
       setAlertModal({
         isOpen: true,
@@ -1066,21 +1071,6 @@ const RideManagement = () => {
     }
     const newDropoffs = editingRide.dropoffs.filter((_, i) => i !== index);
     setEditingRide({ ...editingRide, dropoffs: newDropoffs });
-  };
-
-  const formatTime = (date) => {
-    if (!date) return '';
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  };
-
-  const formatDateTime = (date) => {
-    if (!date) return '';
-    return date.toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      hour: 'numeric', 
-      minute: '2-digit' 
-    });
   };
 
   const getStatusBadge = (status) => {
@@ -1477,7 +1467,7 @@ const RideManagement = () => {
                                     <span className="text-xs font-bold">
                                       ETA: ~{rideETAs[ride.id].minutes} min
                                     </span>
-                                    <span className="text-[10px] bg-green-200 px-1.5 py-0.5 rounded">
+                                    <span className="text-xs bg-green-200 px-1.5 py-0.5 rounded">
                                       Car {rideETAs[ride.id].fastestCar}
                                     </span>
                                   </>
