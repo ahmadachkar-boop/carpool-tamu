@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs, documentId } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2, Search, Filter, SortAsc, Cloud, CloudRain, CloudSnow, Wind, RefreshCw } from 'lucide-react';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2, Search, Filter, SortAsc, Info } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
 import { isMale, isFemale } from '../utils/genderUtils';
 import { formatTime, formatDateTime, calculateWaitTime, formatWaitTime, isLongWait } from '../utils/timeUtils';
 import { logError, logWarning } from '../utils/errorLogger';
-import { getCurrentWeather, getWeatherAlert, getTrafficConditions, getTrafficAlert, getWeatherEmoji, WEATHER_SEVERITY } from '../utils/weatherUtils';
 import Snackbar from './Snackbar';
 
 // CONSTANTS: Extracted magic numbers for maintainability
@@ -160,12 +159,8 @@ const RideManagement = () => {
   const [snackbar, setSnackbar] = useState({ isOpen: false, message: '', type: 'info', onUndo: null });
   const [lastAction, setLastAction] = useState(null); // Stores last action for undo
 
-  // NEW: Weather and traffic
-  const [weather, setWeather] = useState(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [trafficData, setTrafficData] = useState(null);
-  const [trafficLoading, setTrafficLoading] = useState(false);
-  const [activeRideCompletionTimes, setActiveRideCompletionTimes] = useState({}); // { rideId: estimatedTime }
+  // NEW: Traffic info modal
+  const [trafficModal, setTrafficModal] = useState({ isOpen: false, loading: false, data: null });
 
   // NEW: Reassignment modal
   const [reassigningRide, setReassigningRide] = useState(null);
@@ -181,79 +176,11 @@ const RideManagement = () => {
     };
   }, []);
 
-  // NEW: Fetch weather data every 10 minutes
-  useEffect(() => {
-    if (!activeNDR) return;
-
-    const fetchWeather = async () => {
-      setWeatherLoading(true);
-      // Use event location or default to College Station, TX
-      const lat = activeNDR.location?.lat || 30.6280;
-      const lng = activeNDR.location?.lng || -96.3344;
-
-      const weatherData = await getCurrentWeather(lat, lng);
-      if (isMounted.current && weatherData) {
-        setWeather(weatherData);
-      }
-      setWeatherLoading(false);
-    };
-
-    fetchWeather();
-    const interval = setInterval(fetchWeather, 600000); // Update every 10 minutes
-
-    return () => clearInterval(interval);
-  }, [activeNDR]);
-
-  // NEW: Monitor traffic for active rides every 5 minutes
-  useEffect(() => {
-    if (!activeNDR || !googleMapsLoaded || !window.google || rides.active.length === 0) {
-      setTrafficData(null);
-      return;
-    }
-
-    const fetchTraffic = async () => {
-      setTrafficLoading(true);
-
-      try {
-        const directionsService = new window.google.maps.DirectionsService();
-
-        // Get traffic for the first active ride as a sample
-        const sampleRide = rides.active[0];
-        const location = carLocations[sampleRide.carNumber];
-
-        if (location && sampleRide.pickup) {
-          const origin = { lat: location.latitude, lng: location.longitude };
-          const destination = sampleRide.pickup;
-
-          const traffic = await getTrafficConditions(origin, destination, directionsService);
-          if (isMounted.current && traffic) {
-            setTrafficData(traffic);
-          }
-        }
-      } catch (error) {
-        logError('Traffic Monitoring', error);
-      } finally {
-        setTrafficLoading(false);
-      }
-    };
-
-    fetchTraffic();
-    const interval = setInterval(fetchTraffic, 300000); // Update every 5 minutes
-
-    return () => clearInterval(interval);
-  }, [activeNDR, googleMapsLoaded, rides.active, carLocations]);
-
-  // SERVER-SIDE: ETA Calculation Function
+  // SERVER-SIDE: Automatic ETA Calculation with debounce
   // This function calculates ETAs and stores them in Firestore
   // All clients read ETAs from ride documents instead of calculating
   const calculateAndStoreETAs = async () => {
     if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0) {
-      setSnackbar({
-        isOpen: true,
-        message: 'No pending rides to calculate ETAs for',
-        type: 'info',
-        onUndo: null
-      });
       return;
     }
 
@@ -477,22 +404,25 @@ const RideManagement = () => {
       }
 
       setCalculatingETAs(false);
-      setSnackbar({
-        isOpen: true,
-        message: `ETAs calculated for ${Object.keys(newETAs).length} rides`,
-        type: 'success',
-        onUndo: null
-      });
     } catch (error) {
       logError('Calculate and Store ETAs', error);
       setCalculatingETAs(false);
-      setAlertModal({
-        isOpen: true,
-        title: 'Error',
-        message: 'Error calculating ETAs: ' + error.message
-      });
     }
   };
+
+  // Automatically calculate ETAs with debounce
+  useEffect(() => {
+    if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0) {
+      return;
+    }
+
+    // OPTIMIZATION: Debounce to reduce API calls
+    const timer = setTimeout(() => {
+      calculateAndStoreETAs();
+    }, ETA_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
 
   // NEW: Update current time for timer displays
   useEffect(() => {
@@ -1383,155 +1313,15 @@ const RideManagement = () => {
               {availableCars} {availableCars === 1 ? 'Car' : 'Cars'} Available
             </p>
           </div>
+          <button
+            onClick={() => setTrafficModal({ isOpen: true, loading: false, data: null })}
+            className="bg-orange-100 hover:bg-orange-200 px-4 py-2 rounded-lg flex items-center gap-2 min-h-touch touch-manipulation transition"
+          >
+            <Info size={18} className="text-orange-800" />
+            <p className="text-sm font-semibold text-orange-800">Traffic Info</p>
+          </button>
         </div>
       </div>
-
-      {/* NEW: Weather and Traffic Alerts - BIG FOCUS */}
-      <div className="space-y-4">
-        {/* Weather Alert */}
-        {weather && (
-          <div className={`rounded-xl border-3 p-5 shadow-lg ${
-            weather.severity === WEATHER_SEVERITY.DANGER ? 'bg-red-50 border-red-600' :
-            weather.severity === WEATHER_SEVERITY.WARNING ? 'bg-orange-50 border-orange-600' :
-            weather.severity === WEATHER_SEVERITY.CAUTION ? 'bg-yellow-50 border-yellow-600' :
-            'bg-blue-50 border-blue-300'
-          }`}>
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-3">
-                <div className="text-5xl">{getWeatherEmoji(weather.condition)}</div>
-                <div>
-                  <h3 className="font-bold text-gray-900 text-xl">
-                    Current Weather: {weather.temp}°F
-                  </h3>
-                  <p className="text-base text-gray-700 font-medium capitalize">
-                    {weather.description}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Wind: {weather.windSpeed} mph | Humidity: {weather.humidity}%
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={async () => {
-                  setWeatherLoading(true);
-                  const lat = activeNDR.location?.lat || 30.6280;
-                  const lng = activeNDR.location?.lng || -96.3344;
-                  const weatherData = await getCurrentWeather(lat, lng);
-                  if (weatherData) setWeather(weatherData);
-                  setWeatherLoading(false);
-                }}
-                className="px-4 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation font-semibold"
-                disabled={weatherLoading}
-              >
-                <RefreshCw size={16} className={weatherLoading ? 'animate-spin' : ''} />
-                Refresh Weather
-              </button>
-            </div>
-            {getWeatherAlert(weather) && (
-              <div className="mt-4 p-4 bg-white rounded-lg border-2 border-current shadow-sm">
-                <p className="font-bold text-gray-900 text-base">{getWeatherAlert(weather)}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Traffic Alert */}
-        {trafficData && (
-          <div className={`rounded-xl border-3 p-5 shadow-lg ${
-            trafficData.severity === WEATHER_SEVERITY.WARNING ? 'bg-red-50 border-red-600' :
-            trafficData.severity === WEATHER_SEVERITY.CAUTION ? 'bg-orange-50 border-orange-600' :
-            'bg-green-50 border-green-300'
-          }`}>
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center gap-3">
-                <div className="text-5xl">🚦</div>
-                <div>
-                  <h3 className="font-bold text-gray-900 text-xl">
-                    Current Traffic: {trafficData.trafficLevel.toUpperCase()}
-                  </h3>
-                  <p className="text-base text-gray-700 font-medium">
-                    {trafficData.distance} - {trafficData.durationInTraffic} min with traffic
-                  </p>
-                  {trafficData.delay > 0 && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      +{trafficData.delay} min delay from normal conditions
-                    </p>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={async () => {
-                  if (!googleMapsLoaded || !window.google || rides.active.length === 0) return;
-
-                  setTrafficLoading(true);
-                  try {
-                    const directionsService = new window.google.maps.DirectionsService();
-                    const sampleRide = rides.active[0];
-                    const location = carLocations[sampleRide.carNumber];
-
-                    if (location && sampleRide.pickup) {
-                      const origin = { lat: location.latitude, lng: location.longitude };
-                      const traffic = await getTrafficConditions(origin, sampleRide.pickup, directionsService);
-                      if (traffic) setTrafficData(traffic);
-                    }
-                  } catch (error) {
-                    logError('Traffic Refresh', error);
-                  } finally {
-                    setTrafficLoading(false);
-                  }
-                }}
-                className="px-4 py-2 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2 min-h-touch touch-manipulation font-semibold"
-                disabled={trafficLoading}
-              >
-                <RefreshCw size={16} className={trafficLoading ? 'animate-spin' : ''} />
-                Refresh Traffic
-              </button>
-            </div>
-            {getTrafficAlert(trafficData) && (
-              <div className="mt-4 p-4 bg-white rounded-lg border-2 border-current shadow-sm">
-                <p className="font-bold text-gray-900 text-base">{getTrafficAlert(trafficData)}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Show placeholder when no traffic data yet */}
-        {!trafficData && rides.active.length > 0 && (
-          <div className="rounded-xl border-3 border-gray-300 bg-gray-50 p-5 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="text-5xl">🚦</div>
-              <div>
-                <h3 className="font-bold text-gray-900 text-xl">Traffic Monitoring</h3>
-                <p className="text-base text-gray-600">
-                  {trafficLoading ? 'Loading current traffic conditions...' : 'Traffic data will appear when active rides are en route'}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* SERVER-SIDE: Manual ETA Recalculation */}
-      {rides.pending.length > 0 && (
-        <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h3 className="font-bold text-gray-900 text-lg">Estimated Pickup Times</h3>
-              <p className="text-sm text-gray-600">
-                ETAs are stored server-side and persist across all devices and sessions
-              </p>
-            </div>
-            <button
-              onClick={calculateAndStoreETAs}
-              disabled={calculatingETAs}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold flex items-center gap-2 min-h-touch touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Navigation size={16} className={calculatingETAs ? 'animate-spin' : ''} />
-              {calculatingETAs ? 'Calculating...' : 'Recalculate ETAs'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* NEW: Car Status Board */}
       {availableCars > 0 && (
@@ -2251,6 +2041,217 @@ const RideManagement = () => {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Traffic Info Modal */}
+      {trafficModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b-2 border-gray-200 px-6 py-4 flex justify-between items-center rounded-t-xl">
+              <h3 className="text-xl font-bold text-gray-900">Bryan/College Station Traffic Info</h3>
+              <button
+                onClick={() => setTrafficModal({ isOpen: false, loading: false, data: null })}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {!trafficModal.data && !trafficModal.loading && (
+                <div className="text-center py-8">
+                  <button
+                    onClick={async () => {
+                      setTrafficModal({ ...trafficModal, loading: true });
+
+                      try {
+                        if (!googleMapsLoaded || !window.google) {
+                          throw new Error('Google Maps not loaded');
+                        }
+
+                        const directionsService = new window.google.maps.DirectionsService();
+
+                        // College Station center
+                        const csCenter = { lat: 30.6280, lng: -96.3344 };
+                        // Bryan center
+                        const bryanCenter = { lat: 30.6744, lng: -96.3700 };
+
+                        // Key routes to check
+                        const routes = [
+                          { name: 'Texas Ave (Northgate to Bryan)', origin: { lat: 30.6217, lng: -96.3401 }, destination: bryanCenter },
+                          { name: 'University Dr (East Campus)', origin: { lat: 30.6193, lng: -96.3369 }, destination: { lat: 30.6280, lng: -96.3080 } },
+                          { name: 'Wellborn Rd (North-South)', origin: { lat: 30.6500, lng: -96.2900 }, destination: { lat: 30.5800, lng: -96.2900 } },
+                          { name: 'Harvey Rd (East-West)', origin: { lat: 30.6000, lng: -96.3700 }, destination: { lat: 30.6000, lng: -96.2900 } },
+                          { name: 'George Bush Dr (Campus Loop)', origin: { lat: 30.6100, lng: -96.3500 }, destination: { lat: 30.6200, lng: -96.3200 } }
+                        ];
+
+                        const routeData = [];
+
+                        for (const route of routes) {
+                          try {
+                            const result = await new Promise((resolve, reject) => {
+                              directionsService.route(
+                                {
+                                  origin: route.origin,
+                                  destination: route.destination,
+                                  travelMode: window.google.maps.TravelMode.DRIVING,
+                                  drivingOptions: {
+                                    departureTime: new Date(),
+                                    trafficModel: 'bestguess'
+                                  }
+                                },
+                                (result, status) => {
+                                  if (status === 'OK') resolve(result);
+                                  else reject(status);
+                                }
+                              );
+                            });
+
+                            const leg = result.routes[0].legs[0];
+                            const duration = leg.duration.value;
+                            const durationInTraffic = leg.duration_in_traffic ? leg.duration_in_traffic.value : duration;
+                            const delayMinutes = Math.round((durationInTraffic - duration) / 60);
+
+                            let status = 'CLEAR';
+                            if (delayMinutes > 10) status = 'HEAVY';
+                            else if (delayMinutes > 5) status = 'MODERATE';
+                            else if (delayMinutes > 2) status = 'LIGHT';
+
+                            routeData.push({
+                              name: route.name,
+                              duration: Math.round(duration / 60),
+                              durationInTraffic: Math.round(durationInTraffic / 60),
+                              delay: delayMinutes,
+                              status,
+                              distance: leg.distance.text
+                            });
+                          } catch (err) {
+                            logError('Traffic Route Check', err, { route: route.name });
+                          }
+                        }
+
+                        setTrafficModal({
+                          isOpen: true,
+                          loading: false,
+                          data: {
+                            routes: routeData,
+                            updatedAt: new Date()
+                          }
+                        });
+                      } catch (error) {
+                        logError('Traffic Info Fetch', error);
+                        setTrafficModal({
+                          isOpen: true,
+                          loading: false,
+                          data: null
+                        });
+                        setAlertModal({
+                          isOpen: true,
+                          title: 'Error',
+                          message: 'Failed to load traffic data. Please try again.'
+                        });
+                      }
+                    }}
+                    className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-semibold flex items-center gap-2 mx-auto min-h-touch touch-manipulation"
+                  >
+                    <Info size={20} />
+                    Load Current Traffic Conditions
+                  </button>
+                  <p className="text-sm text-gray-500 mt-4">
+                    Click to check traffic on major routes in Bryan/College Station
+                  </p>
+                </div>
+              )}
+
+              {trafficModal.loading && (
+                <div className="text-center py-12">
+                  <Loader2 size={48} className="animate-spin text-orange-600 mx-auto mb-4" />
+                  <p className="text-gray-600 font-medium">Checking traffic conditions...</p>
+                </div>
+              )}
+
+              {trafficModal.data && (
+                <div className="space-y-6">
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>Last Updated:</strong> {trafficModal.data.updatedAt.toLocaleTimeString()}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-lg mb-3">Major Routes</h4>
+                    <div className="space-y-3">
+                      {trafficModal.data.routes.map((route, idx) => (
+                        <div
+                          key={idx}
+                          className={`border-2 rounded-lg p-4 ${
+                            route.status === 'HEAVY' ? 'bg-red-50 border-red-400' :
+                            route.status === 'MODERATE' ? 'bg-orange-50 border-orange-400' :
+                            route.status === 'LIGHT' ? 'bg-yellow-50 border-yellow-400' :
+                            'bg-green-50 border-green-400'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                              <p className="font-bold text-gray-900">{route.name}</p>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {route.distance} - {route.durationInTraffic} min
+                                {route.delay > 0 && (
+                                  <span className="font-semibold text-red-700"> (+{route.delay} min delay)</span>
+                                )}
+                              </p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              route.status === 'HEAVY' ? 'bg-red-200 text-red-900' :
+                              route.status === 'MODERATE' ? 'bg-orange-200 text-orange-900' :
+                              route.status === 'LIGHT' ? 'bg-yellow-200 text-yellow-900' :
+                              'bg-green-200 text-green-900'
+                            }`}>
+                              {route.status}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4">
+                    <h4 className="font-bold text-gray-900 mb-2">Recommendations</h4>
+                    <ul className="space-y-2 text-sm text-gray-700">
+                      {trafficModal.data.routes.some(r => r.status === 'HEAVY') && (
+                        <li className="flex gap-2">
+                          <AlertTriangle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                          <span><strong>Heavy traffic detected.</strong> Avoid heavily congested routes if possible.</span>
+                        </li>
+                      )}
+                      {trafficModal.data.routes.filter(r => r.status === 'HEAVY' || r.status === 'MODERATE').length === 0 && (
+                        <li className="flex gap-2">
+                          <Check size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
+                          <span>Traffic is currently light across all major routes.</span>
+                        </li>
+                      )}
+                      <li className="flex gap-2">
+                        <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                        <span>Check back periodically during busy hours (evening rush, events).</span>
+                      </li>
+                      <li className="flex gap-2">
+                        <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                        <span>Consider alternative routes for heavily delayed areas.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button
+                    onClick={() => setTrafficModal({ isOpen: false, loading: false, data: null })}
+                    className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold min-h-touch touch-manipulation"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
