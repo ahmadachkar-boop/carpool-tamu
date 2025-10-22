@@ -1,21 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs, documentId } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation } from 'lucide-react';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation, Loader2 } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
-
-// Helper function to normalize and check gender
-const normalizeGender = (gender) => {
-  if (!gender) return null;
-  const normalized = gender.toLowerCase().trim();
-  if (['male', 'm', 'man'].includes(normalized)) return 'male';
-  if (['female', 'f', 'woman'].includes(normalized)) return 'female';
-  return null;
-};
-
-const isMale = (member) => normalizeGender(member?.gender) === 'male';
-const isFemale = (member) => normalizeGender(member?.gender) === 'female';
+import { isMale, isFemale } from '../utils/genderUtils';
 
 // Custom Modal Components (replaces alert/prompt/confirm)
 const Modal = ({ isOpen, onClose, title, children, actions }) => {
@@ -35,6 +24,72 @@ const Modal = ({ isOpen, onClose, title, children, actions }) => {
     </div>
   );
 };
+
+// OPTIMIZATION: Memoized Car Status Card to prevent re-renders every second
+const CarStatusCard = React.memo(({ carNum, status, location, currentTime, getCarStatusColor, getCarStatusLabel }) => {
+  return (
+    <div className="border-2 border-gray-200 rounded-xl p-4 hover:shadow-md transition">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Car size={20} className="text-gray-700" />
+          <span className="font-bold text-lg text-gray-900">Car {carNum}</span>
+        </div>
+        <div className={`w-3 h-3 rounded-full ${getCarStatusColor(status.status)}`}></div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="bg-gray-50 rounded-lg px-3 py-2">
+          <p className={`text-xs font-bold ${
+            status.status === 'available' ? 'text-green-700' :
+            status.status === 'en_route' ? 'text-blue-700' :
+            'text-yellow-700'
+          }`}>
+            {getCarStatusLabel(status.status)}
+          </p>
+        </div>
+
+        {status.currentRide && (
+          <div className="text-xs space-y-1">
+            <p className="font-semibold text-gray-900 truncate">
+              {status.currentRide.patronName}
+            </p>
+            <p className="text-gray-600">
+              {status.currentRide.riders} {status.currentRide.riders === 1 ? 'rider' : 'riders'}
+            </p>
+            {status.currentRide.pickedUpAt ? (
+              <p className="text-purple-600 font-semibold">
+                → {status.currentRide.dropoffs?.[0]?.substring(0, 25) || 'Dropoff'}...
+              </p>
+            ) : (
+              <p className="text-blue-600 font-semibold">
+                → {status.currentRide.pickup?.substring(0, 25)}...
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
+          <span className="text-xs text-gray-500">
+            {status.ridesCompleted} {status.ridesCompleted === 1 ? 'ride' : 'rides'} tonight
+          </span>
+          {location && (
+            <span className="text-xs text-gray-400">
+              {Math.floor((currentTime - location.updatedAt) / (1000 * 60))}m ago
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison function - only re-render if these change
+  return (
+    prevProps.status.status === nextProps.status.status &&
+    prevProps.status.ridesCompleted === nextProps.status.ridesCompleted &&
+    prevProps.status.currentRide?.id === nextProps.status.currentRide?.id &&
+    Math.floor((prevProps.currentTime - prevProps.location?.updatedAt) / (1000 * 60)) === Math.floor((nextProps.currentTime - nextProps.location?.updatedAt) / (1000 * 60))
+  );
+});
 
 const RideManagement = () => {
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
@@ -67,6 +122,17 @@ const RideManagement = () => {
   const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
   const [promptValue, setPromptValue] = useState('');
   const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
+
+  // Loading states for async operations
+  const [loadingStates, setLoadingStates] = useState({
+    assigningCar: false,
+    startingRide: {},
+    completingRide: {},
+    cancellingRide: {},
+    terminatingRide: {},
+    savingEdit: false,
+    splittingRide: false
+  });
 
   // Track component mount/unmount to prevent memory leaks
   useEffect(() => {
@@ -579,6 +645,8 @@ const RideManagement = () => {
       return;
     }
 
+    setLoadingStates(prev => ({ ...prev, assigningCar: true }));
+
     try {
       const carNumber = parseInt(assigningRide.selectedCar);
       const ndrDoc = await getDoc(doc(db, 'ndrs', activeNDR.id));
@@ -664,8 +732,10 @@ const RideManagement = () => {
       });
 
       setAssigningRide(null);
+      setLoadingStates(prev => ({ ...prev, assigningCar: false }));
     } catch (error) {
       console.error('Error assigning car:', error);
+      setLoadingStates(prev => ({ ...prev, assigningCar: false }));
       setAlertModal({
         isOpen: true,
         title: 'Error',
@@ -680,13 +750,16 @@ const RideManagement = () => {
       title: 'Mark as Picked Up?',
       message: 'Confirm that the patron has been picked up.',
       onConfirm: async () => {
+        setLoadingStates(prev => ({ ...prev, startingRide: { ...prev.startingRide, [rideId]: true } }));
         try {
           await updateDoc(doc(db, 'rides', rideId), {
             pickedUpAt: Timestamp.now()
           });
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+          setLoadingStates(prev => ({ ...prev, startingRide: { ...prev.startingRide, [rideId]: false } }));
         } catch (error) {
           console.error('Error starting ride:', error);
+          setLoadingStates(prev => ({ ...prev, startingRide: { ...prev.startingRide, [rideId]: false } }));
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setAlertModal({
             isOpen: true,
@@ -704,14 +777,17 @@ const RideManagement = () => {
       title: 'Complete Ride?',
       message: 'Mark this ride as completed?',
       onConfirm: async () => {
+        setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: true } }));
         try {
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'completed',
             completedAt: Timestamp.now()
           });
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+          setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
         } catch (error) {
           console.error('Error completing ride:', error);
+          setLoadingStates(prev => ({ ...prev, completingRide: { ...prev.completingRide, [rideId]: false } }));
           setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
           setAlertModal({
             isOpen: true,
@@ -730,6 +806,7 @@ const RideManagement = () => {
       message: 'Please provide a reason for cancellation:',
       defaultValue: '',
       onSubmit: async (reason) => {
+        setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: true } }));
         try {
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'cancelled',
@@ -738,8 +815,10 @@ const RideManagement = () => {
           });
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
+          setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
         } catch (error) {
           console.error('Error cancelling ride:', error);
+          setLoadingStates(prev => ({ ...prev, cancellingRide: { ...prev.cancellingRide, [rideId]: false } }));
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
           setAlertModal({
@@ -759,6 +838,7 @@ const RideManagement = () => {
       message: 'Reason for termination (e.g., patron no-show, unsafe situation):',
       defaultValue: '',
       onSubmit: async (reason) => {
+        setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: true } }));
         try {
           await updateDoc(doc(db, 'rides', rideId), {
             status: 'terminated',
@@ -767,8 +847,10 @@ const RideManagement = () => {
           });
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
+          setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
         } catch (error) {
           console.error('Error terminating ride:', error);
+          setLoadingStates(prev => ({ ...prev, terminatingRide: { ...prev.terminatingRide, [rideId]: false } }));
           setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
           setPromptValue('');
           setAlertModal({
@@ -791,10 +873,66 @@ const RideManagement = () => {
   const saveEdit = async () => {
     if (!editingRide) return;
 
+    // VALIDATION: Check required fields
+    const patronName = editingRide.patronName?.trim();
+    const phone = editingRide.phone?.trim();
+    const pickup = editingRide.pickup?.trim();
+    const riders = editingRide.riders;
+
+    if (!patronName) {
+      setAlertModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Patron name is required.'
+      });
+      return;
+    }
+
+    if (!phone) {
+      setAlertModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Phone number is required.'
+      });
+      return;
+    }
+
+    if (!pickup) {
+      setAlertModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Pickup location is required.'
+      });
+      return;
+    }
+
+    if (!riders || riders < 1) {
+      setAlertModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Number of riders must be at least 1.'
+      });
+      return;
+    }
+
+    // VALIDATION: Check dropoffs
+    const hasEmptyDropoff = editingRide.dropoffs.some(d => !d?.trim());
+    if (hasEmptyDropoff) {
+      setAlertModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'All dropoff locations must be filled in.'
+      });
+      return;
+    }
+
+    setLoadingStates(prev => ({ ...prev, savingEdit: true }));
+
     try {
       // OPTIMIZATION: Add version check for optimistic locking (prevents race conditions)
       const rideDoc = await getDoc(doc(db, 'rides', editingRide.id));
       if (!rideDoc.exists()) {
+        setLoadingStates(prev => ({ ...prev, savingEdit: false }));
         setAlertModal({
           isOpen: true,
           title: 'Ride Not Found',
@@ -808,16 +946,18 @@ const RideManagement = () => {
       const currentVersion = currentRide.version || 0;
 
       await updateDoc(doc(db, 'rides', editingRide.id), {
-        patronName: editingRide.patronName,
-        phone: editingRide.phone,
-        pickup: editingRide.pickup,
+        patronName: patronName,
+        phone: phone,
+        pickup: pickup,
         dropoffs: editingRide.dropoffs,
-        riders: editingRide.riders,
+        riders: riders,
         version: currentVersion + 1  // Increment version for optimistic locking
       });
       setEditingRide(null);
+      setLoadingStates(prev => ({ ...prev, savingEdit: false }));
     } catch (error) {
       console.error('Error updating ride:', error);
+      setLoadingStates(prev => ({ ...prev, savingEdit: false }));
       setAlertModal({
         isOpen: true,
         title: 'Error',
@@ -861,6 +1001,8 @@ const RideManagement = () => {
       return;
     }
 
+    setLoadingStates(prev => ({ ...prev, splittingRide: true }));
+
     try {
       await updateDoc(doc(db, 'rides', splittingRide.id), {
         riders: splitRiders.ride1,
@@ -888,8 +1030,10 @@ const RideManagement = () => {
       });
       setSplittingRide(null);
       setSplitRiders({ ride1: 1, ride2: 1 });
+      setLoadingStates(prev => ({ ...prev, splittingRide: false }));
     } catch (error) {
       console.error('Error splitting ride:', error);
+      setLoadingStates(prev => ({ ...prev, splittingRide: false }));
       setAlertModal({
         isOpen: true,
         title: 'Error',
@@ -948,8 +1092,8 @@ const RideManagement = () => {
     return badges[status] || 'bg-gray-100 text-gray-800';
   };
 
-  // NEW: Get car status color
-  const getCarStatusColor = (status) => {
+  // NEW: Get car status color (memoized)
+  const getCarStatusColor = useCallback((status) => {
     switch (status) {
       case 'available':
         return 'bg-green-500';
@@ -960,10 +1104,10 @@ const RideManagement = () => {
       default:
         return 'bg-gray-400';
     }
-  };
+  }, []);
 
-  // NEW: Get car status label
-  const getCarStatusLabel = (status) => {
+  // NEW: Get car status label (memoized)
+  const getCarStatusLabel = useCallback((status) => {
     switch (status) {
       case 'available':
         return 'AVAILABLE';
@@ -974,7 +1118,7 @@ const RideManagement = () => {
       default:
         return 'UNKNOWN';
     }
-  };
+  }, []);
 
   if (ndrLoading) {
     return (
@@ -1044,60 +1188,17 @@ const RideManagement = () => {
             {Array.from({ length: availableCars }, (_, i) => i + 1).map(carNum => {
               const status = carStatuses[carNum] || { status: 'available', currentRide: null, ridesCompleted: 0 };
               const location = carLocations[carNum];
-              
+
               return (
-                <div key={carNum} className="border-2 border-gray-200 rounded-xl p-4 hover:shadow-md transition">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Car size={20} className="text-gray-700" />
-                      <span className="font-bold text-lg text-gray-900">Car {carNum}</span>
-                    </div>
-                    <div className={`w-3 h-3 rounded-full ${getCarStatusColor(status.status)}`}></div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className={`text-xs font-bold ${
-                        status.status === 'available' ? 'text-green-700' :
-                        status.status === 'en_route' ? 'text-blue-700' :
-                        'text-yellow-700'
-                      }`}>
-                        {getCarStatusLabel(status.status)}
-                      </p>
-                    </div>
-                    
-                    {status.currentRide && (
-                      <div className="text-xs space-y-1">
-                        <p className="font-semibold text-gray-900 truncate">
-                          {status.currentRide.patronName}
-                        </p>
-                        <p className="text-gray-600">
-                          {status.currentRide.riders} {status.currentRide.riders === 1 ? 'rider' : 'riders'}
-                        </p>
-                        {status.currentRide.pickedUpAt ? (
-                          <p className="text-purple-600 font-semibold">
-                            → {status.currentRide.dropoffs?.[0]?.substring(0, 25) || 'Dropoff'}...
-                          </p>
-                        ) : (
-                          <p className="text-blue-600 font-semibold">
-                            → {status.currentRide.pickup?.substring(0, 25)}...
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
-                      <span className="text-xs text-gray-500">
-                        {status.ridesCompleted} {status.ridesCompleted === 1 ? 'ride' : 'rides'} tonight
-                      </span>
-                      {location && (
-                        <span className="text-xs text-gray-400">
-                          {Math.floor((currentTime - location.updatedAt) / (1000 * 60))}m ago
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <CarStatusCard
+                  key={carNum}
+                  carNum={carNum}
+                  status={status}
+                  location={location}
+                  currentTime={currentTime}
+                  getCarStatusColor={getCarStatusColor}
+                  getCarStatusLabel={getCarStatusLabel}
+                />
               );
             })}
           </div>
@@ -1159,22 +1260,28 @@ const RideManagement = () => {
                         type="text"
                         value={editingRide.patronName}
                         onChange={(e) => setEditingRide({...editingRide, patronName: e.target.value})}
-                        className="w-full px-3 py-2 border rounded"
+                        className="w-full px-3 py-2 border rounded min-h-touch"
                         placeholder="Name"
+                        inputMode="text"
+                        autoComplete="name"
                       />
                       <input
                         type="tel"
                         value={editingRide.phone}
                         onChange={(e) => setEditingRide({...editingRide, phone: e.target.value})}
-                        className="w-full px-3 py-2 border rounded"
+                        className="w-full px-3 py-2 border rounded min-h-touch"
                         placeholder="Phone"
+                        inputMode="tel"
+                        autoComplete="tel"
                       />
                       <input
                         type="text"
                         value={editingRide.pickup}
                         onChange={(e) => setEditingRide({...editingRide, pickup: e.target.value})}
-                        className="w-full px-3 py-2 border rounded"
+                        className="w-full px-3 py-2 border rounded min-h-touch"
                         placeholder="Pickup"
+                        inputMode="text"
+                        autoComplete="street-address"
                       />
                       
                       <div>
@@ -1187,13 +1294,15 @@ const RideManagement = () => {
                               type="text"
                               value={dropoff}
                               onChange={(e) => updateDropoff(dropoffIndex, e.target.value)}
-                              className="flex-1 px-3 py-2 border rounded"
+                              className="flex-1 px-3 py-2 border rounded min-h-touch"
                               placeholder={`Dropoff ${dropoffIndex + 1}`}
+                              inputMode="text"
+                              autoComplete="street-address"
                             />
                             {editingRide.dropoffs.length > 1 && (
                               <button
                                 onClick={() => removeDropoffFromEdit(dropoffIndex)}
-                                className="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                                className="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 min-h-touch touch-manipulation"
                               >
                                 <X size={16} />
                               </button>
@@ -1202,7 +1311,7 @@ const RideManagement = () => {
                         ))}
                         <button
                           onClick={addDropoffToEdit}
-                          className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
+                          className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm min-h-touch touch-manipulation"
                         >
                           + Add Dropoff
                         </button>
@@ -1212,19 +1321,24 @@ const RideManagement = () => {
                         type="number"
                         value={editingRide.riders}
                         onChange={(e) => setEditingRide({...editingRide, riders: parseInt(e.target.value)})}
-                        className="w-full px-3 py-2 border rounded"
+                        className="w-full px-3 py-2 border rounded min-h-touch"
                         placeholder="Riders"
+                        inputMode="numeric"
+                        min="1"
                       />
                       <div className="flex gap-2">
                         <button
                           onClick={saveEdit}
-                          className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 touch-manipulation"
+                          disabled={loadingStates.savingEdit}
+                          className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
                         >
-                          Save
+                          {loadingStates.savingEdit && <Loader2 size={16} className="animate-spin" />}
+                          {loadingStates.savingEdit ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={() => setEditingRide(null)}
-                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation"
+                          disabled={loadingStates.savingEdit}
+                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation disabled:opacity-50"
                         >
                           Cancel
                         </button>
@@ -1295,13 +1409,16 @@ const RideManagement = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={assignCar}
-                          className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 touch-manipulation"
+                          disabled={loadingStates.assigningCar || checkingEligibility}
+                          className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
                         >
-                          Assign
+                          {loadingStates.assigningCar && <Loader2 size={16} className="animate-spin" />}
+                          {loadingStates.assigningCar ? 'Assigning...' : 'Assign'}
                         </button>
                         <button
                           onClick={() => setAssigningRide(null)}
-                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation"
+                          disabled={loadingStates.assigningCar}
+                          className="px-4 py-3 md:py-2 min-h-touch bg-gray-300 text-gray-700 rounded hover:bg-gray-400 active:bg-gray-500 touch-manipulation disabled:opacity-50"
                         >
                           Cancel
                         </button>
@@ -1506,16 +1623,20 @@ const RideManagement = () => {
                             {!ride.pickedUpAt && (
                               <button
                                 onClick={() => startRide(ride.id)}
-                                className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 text-sm touch-manipulation"
+                                disabled={loadingStates.startingRide[ride.id]}
+                                className="px-4 py-3 md:py-2 min-h-touch bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 text-sm touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                               >
-                                Mark Picked Up
+                                {loadingStates.startingRide[ride.id] && <Loader2 size={14} className="animate-spin" />}
+                                {loadingStates.startingRide[ride.id] ? 'Marking...' : 'Mark Picked Up'}
                               </button>
                             )}
                             <button
                               onClick={() => completeRide(ride.id)}
-                              className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 text-sm touch-manipulation"
+                              disabled={loadingStates.completingRide[ride.id]}
+                              className="px-4 py-3 md:py-2 min-h-touch bg-blue-600 text-white rounded hover:bg-blue-700 active:bg-blue-800 text-sm touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
-                              Complete
+                              {loadingStates.completingRide[ride.id] && <Loader2 size={14} className="animate-spin" />}
+                              {loadingStates.completingRide[ride.id] ? 'Completing...' : 'Complete'}
                             </button>
                             <button
                               onClick={() => startEdit(ride)}
@@ -1525,15 +1646,19 @@ const RideManagement = () => {
                             </button>
                             <button
                               onClick={() => cancelRide(ride.id)}
-                              className="px-4 py-3 md:py-2 min-h-touch bg-red-500 text-white rounded hover:bg-red-600 active:bg-red-700 text-sm touch-manipulation"
+                              disabled={loadingStates.cancellingRide[ride.id]}
+                              className="px-4 py-3 md:py-2 min-h-touch bg-red-500 text-white rounded hover:bg-red-600 active:bg-red-700 text-sm touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
-                              Cancel
+                              {loadingStates.cancellingRide[ride.id] && <Loader2 size={14} className="animate-spin" />}
+                              {loadingStates.cancellingRide[ride.id] ? 'Cancelling...' : 'Cancel'}
                             </button>
                             <button
                               onClick={() => terminateRide(ride.id)}
-                              className="px-4 py-3 md:py-2 min-h-touch bg-orange-500 text-white rounded hover:bg-orange-600 active:bg-orange-700 text-sm touch-manipulation"
+                              disabled={loadingStates.terminatingRide[ride.id]}
+                              className="px-4 py-3 md:py-2 min-h-touch bg-orange-500 text-white rounded hover:bg-orange-600 active:bg-orange-700 text-sm touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
-                              Terminate
+                              {loadingStates.terminatingRide[ride.id] && <Loader2 size={14} className="animate-spin" />}
+                              {loadingStates.terminatingRide[ride.id] ? 'Terminating...' : 'Terminate'}
                             </button>
                           </>
                         )}
@@ -1547,15 +1672,15 @@ const RideManagement = () => {
         </div>
       </div>
 
-      {/* Split Ride Modal */}
+      {/* Split Ride Modal - MOBILE OPTIMIZED */}
       {splittingRide && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white rounded-t-xl sm:rounded-xl shadow-2xl w-full sm:max-w-md sm:m-4 p-6 pb-safe-offset-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
               <Split size={24} className="text-purple-600" />
-              Split Ride: {splittingRide.patronName}
+              <span className="truncate">Split Ride: {splittingRide.patronName}</span>
             </h3>
-            
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <p className="text-sm text-blue-800">
                 Total Riders: <span className="font-bold">{splittingRide.riders}</span>
@@ -1579,7 +1704,9 @@ const RideManagement = () => {
                     const val = parseInt(e.target.value) || 1;
                     setSplitRiders({ ride1: val, ride2: splittingRide.riders - val });
                   }}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-touch"
+                  inputMode="numeric"
+                  disabled={loadingStates.splittingRide}
                 />
               </div>
 
@@ -1596,7 +1723,9 @@ const RideManagement = () => {
                     const val = parseInt(e.target.value) || 1;
                     setSplitRiders({ ride1: splittingRide.riders - val, ride2: val });
                   }}
-                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-touch"
+                  inputMode="numeric"
+                  disabled={loadingStates.splittingRide}
                 />
               </div>
 
@@ -1610,16 +1739,19 @@ const RideManagement = () => {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleSplitRide}
-                className="flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
+                disabled={loadingStates.splittingRide}
+                className="flex-1 px-4 py-3 min-h-touch bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
               >
-                Split Ride
+                {loadingStates.splittingRide && <Loader2 size={16} className="animate-spin" />}
+                {loadingStates.splittingRide ? 'Splitting...' : 'Split Ride'}
               </button>
               <button
                 onClick={() => {
                   setSplittingRide(null);
                   setSplitRiders({ ride1: 1, ride2: 1 });
                 }}
-                className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold"
+                disabled={loadingStates.splittingRide}
+                className="flex-1 px-4 py-3 min-h-touch bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold touch-manipulation disabled:opacity-50"
               >
                 Cancel
               </button>
