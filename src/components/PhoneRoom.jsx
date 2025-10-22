@@ -1,9 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, query, onSnapshot, where, Timestamp, getDocs } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
 import { AlertCircle, Phone, MapPin, Users, Send, CheckCircle, XCircle, Shield, AlertTriangle, Plus, X, Clock, TrendingUp } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
+
+// Development logging helper
+const isDev = process.env.NODE_ENV === 'development';
+const devLog = (...args) => {
+  if (isDev) console.log(...args);
+};
+const devError = (...args) => {
+  if (isDev) console.error(...args);
+};
+
+// Phone validation regex - valid US phone format
+const PHONE_REGEX = /^[2-9]\d{2}[2-9]\d{6}$/;
+
+// Mock addresses configuration
+const MOCK_BCS_ADDRESSES = [
+  '123 University Dr, College Station, TX 77840',
+  '456 Texas Ave, Bryan, TX 77801',
+  '789 George Bush Dr, College Station, TX 77840',
+  '101 Main St, Bryan, TX 77801',
+  '202 Wellborn Rd, College Station, TX 77840',
+  '303 Villa Maria Rd, Bryan, TX 77802'
+];
 
 const PhoneRoom = () => {
   const { activeNDR, loading } = useActiveNDR();
@@ -71,6 +93,8 @@ const PhoneRoom = () => {
   const [blacklistedAddresses, setBlacklistedAddresses] = useState([]);
   const [blacklistedPhones, setBlacklistedPhones] = useState([]);
   const [blacklistLoading, setBlacklistLoading] = useState(false);
+  const [blacklistMessage, setBlacklistMessage] = useState('');
+  const [blacklistMessageType, setBlacklistMessageType] = useState('');
   const [blacklistAddressSuggestions, setBlacklistAddressSuggestions] = useState([]);
   const [showBlacklistSuggestions, setShowBlacklistSuggestions] = useState(false);
   const blacklistAddressRef = useRef(null);
@@ -89,13 +113,7 @@ const PhoneRoom = () => {
   const VALID_CITIES = ['bryan', 'college station', 'college-station'];
 
   const getMockBCSAddresses = (input) => {
-    const mockAddresses = [
-      '123 University Dr, College Station, TX 77840',
-      '456 Texas Ave, Bryan, TX 77801',
-      '789 George Bush Dr, College Station, TX 77840',
-      '101 Main St, Bryan, TX 77801'
-    ];
-    return mockAddresses.filter(addr => 
+    return MOCK_BCS_ADDRESSES.filter(addr =>
       addr.toLowerCase().includes(input.toLowerCase())
     );
   };
@@ -140,10 +158,11 @@ const PhoneRoom = () => {
     return () => unsubscribe();
   }, [activeNDR]);
 
-  // NEW: Check for duplicate caller when phone number changes
+  // NEW: Check for duplicate caller when phone number is fully formatted
   useEffect(() => {
     const checkDuplicateCaller = async () => {
-      if (!activeNDR || !formData.phone || formData.phone.length < 14) {
+      // Only check when phone is fully formatted (###) ###-####
+      if (!activeNDR || !formData.phone || formData.phone.length !== 14) {
         setDuplicateCallerWarning(null);
         return;
       }
@@ -155,9 +174,9 @@ const PhoneRoom = () => {
           where('ndrId', '==', activeNDR.id),
           where('phone', '==', formData.phone)
         );
-        
+
         const snapshot = await getDocs(ridesQuery);
-        
+
         if (!snapshot.empty) {
           const previousRides = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -173,12 +192,17 @@ const PhoneRoom = () => {
           setDuplicateCallerWarning(null);
         }
       } catch (error) {
-        console.error('Error checking duplicate caller:', error);
+        devError('Error checking duplicate caller:', error);
       }
     };
 
-    const debounce = setTimeout(checkDuplicateCaller, 500);
-    return () => clearTimeout(debounce);
+    // Only trigger check when phone is fully formatted
+    if (formData.phone.length === 14) {
+      const debounce = setTimeout(checkDuplicateCaller, 300);
+      return () => clearTimeout(debounce);
+    } else {
+      setDuplicateCallerWarning(null);
+    }
   }, [formData.phone, activeNDR]);
 
   // NEW: Calculate estimated wait time using REAL routing with FULL QUEUE SIMULATION
@@ -191,7 +215,7 @@ const PhoneRoom = () => {
 
       // If Google Maps not loaded, use simple fallback
       if (!isLoaded || !window.google) {
-        console.log('Google Maps not loaded, using fallback calculation');
+        devLog('Google Maps not loaded, using fallback calculation');
         setCalculatingWait(true);
         
         try {
@@ -217,7 +241,7 @@ const PhoneRoom = () => {
             reason: 'Google Maps unavailable'
           });
         } catch (error) {
-          console.error('Error in fallback calculation:', error);
+          devError('Error in fallback calculation:', error);
           setEstimatedWaitTime({
             min: 15,
             max: 30,
@@ -280,7 +304,7 @@ const PhoneRoom = () => {
           ...doc.data()
         }));
 
-        console.log(`🚗 Simulating queue: ${pendingCount} pending rides, ${availableCars} cars`);
+        devLog(`🚗 Simulating queue: ${pendingCount} pending rides, ${availableCars} cars`);
 
         // Helper function to route a full ride
         const routeFullRide = async (origin, ride) => {
@@ -329,7 +353,7 @@ const PhoneRoom = () => {
 
             return { minutes: totalMinutes, finalLocation: finalDropoff };
           } catch (error) {
-            console.error('Error routing ride:', error);
+            devError('Error routing ride:', error);
             // Fallback: 20 min average
             const dropoffs = ride.dropoffs || [ride.dropoff];
             return { 
@@ -418,7 +442,7 @@ const PhoneRoom = () => {
                 currentLocation: finalDropoff
               });
             } catch (error) {
-              console.error(`Error routing current ride for car ${carNum}:`, error);
+              devError(`Error routing current ride for car ${carNum}:`, error);
               const dropoffs = activeRide.dropoffs || [activeRide.dropoff];
               carTimeline.push({
                 carNumber: carNum,
@@ -429,7 +453,7 @@ const PhoneRoom = () => {
           }
         }
 
-        console.log('📊 Initial car availability:', carTimeline);
+        devLog('📊 Initial car availability:', carTimeline);
 
         // STEP 2: Simulate dispatching ALL pending rides in queue order
         for (let i = 0; i < pendingRides.length; i++) {
@@ -439,7 +463,7 @@ const PhoneRoom = () => {
           carTimeline.sort((a, b) => a.availableAt - b.availableAt);
           const nextCar = carTimeline[0];
 
-          console.log(`📋 Queue ${i+1}/${pendingCount}: Assigning to Car ${nextCar.carNumber} (available in ${nextCar.availableAt} min)`);
+          devLog(`📋 Queue ${i+1}/${pendingCount}: Assigning to Car ${nextCar.carNumber} (available in ${nextCar.availableAt} min)`);
 
           // Calculate route from car's next location to this ride
           const origin = nextCar.currentLocation || formData.pickup; // Fallback if no location
@@ -449,10 +473,10 @@ const PhoneRoom = () => {
           nextCar.availableAt += rideResult.minutes;
           nextCar.currentLocation = rideResult.finalLocation;
 
-          console.log(`  → Ride takes ${rideResult.minutes} min, car available again at ${nextCar.availableAt} min`);
+          devLog(`  → Ride takes ${rideResult.minutes} min, car available again at ${nextCar.availableAt} min`);
         }
 
-        console.log('📊 After processing queue:', carTimeline);
+        devLog('📊 After processing queue:', carTimeline);
 
         // STEP 3: Now calculate time to reach the NEW caller's pickup
         const finalCarTimeline = [];
@@ -487,9 +511,9 @@ const PhoneRoom = () => {
               availableInMinutes: totalAvailableInMinutes
             });
 
-            console.log(`🚗 Car ${car.carNumber}: Free at ${car.availableAt} min + ${toNewPickupMinutes} min drive = ${totalAvailableInMinutes} min total`);
+            devLog(`🚗 Car ${car.carNumber}: Free at ${car.availableAt} min + ${toNewPickupMinutes} min drive = ${totalAvailableInMinutes} min total`);
           } catch (error) {
-            console.error(`Error routing to new pickup for car ${car.carNumber}:`, error);
+            devError(`Error routing to new pickup for car ${car.carNumber}:`, error);
             finalCarTimeline.push({
               carNumber: car.carNumber,
               availableInMinutes: car.availableAt + 10 // Fallback
@@ -506,7 +530,7 @@ const PhoneRoom = () => {
           const minWait = Math.max(5, estimatedMinutes - 3);
           const maxWait = estimatedMinutes + 5;
 
-          console.log(`✅ Final result: Car ${fastestCar.carNumber} arrives in ${estimatedMinutes} min (${minWait}-${maxWait} min range)`);
+          devLog(`✅ Final result: Car ${fastestCar.carNumber} arrives in ${estimatedMinutes} min (${minWait}-${maxWait} min range)`);
 
           setEstimatedWaitTime({
             min: minWait,
@@ -529,7 +553,7 @@ const PhoneRoom = () => {
           });
         }
       } catch (error) {
-        console.error('Error calculating wait time:', error);
+        devError('Error calculating wait time:', error);
         // Fallback calculation - fetch pending count separately
         try {
           const ridesRef = collection(db, 'rides');
@@ -551,7 +575,7 @@ const PhoneRoom = () => {
             fallback: true
           });
         } catch (fallbackError) {
-          console.error('Error in fallback calculation:', fallbackError);
+          devError('Error in fallback calculation:', fallbackError);
           // Ultimate fallback - just show generic estimate
           setEstimatedWaitTime({
             min: 15,
@@ -618,33 +642,38 @@ const PhoneRoom = () => {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (pickupRef.current && !pickupRef.current.contains(event.target)) {
-        setShowPickupSuggestions(false);
-        setShowCommonPickups(false);
-      }
-      
-      dropoffRefs.current.forEach((ref, index) => {
-        if (ref && !ref.contains(event.target)) {
-          const newShowSuggestions = [...showDropoffSuggestions];
+  // Use useCallback to prevent memory leaks from frequent event listener changes
+  const handleClickOutside = useCallback((event) => {
+    if (pickupRef.current && !pickupRef.current.contains(event.target)) {
+      setShowPickupSuggestions(false);
+      setShowCommonPickups(false);
+    }
+
+    dropoffRefs.current.forEach((ref, index) => {
+      if (ref && !ref.contains(event.target)) {
+        setShowDropoffSuggestions(prev => {
+          const newShowSuggestions = [...prev];
           newShowSuggestions[index] = false;
-          setShowDropoffSuggestions(newShowSuggestions);
-          
-          const newShowCommon = [...showCommonDropoffs];
+          return newShowSuggestions;
+        });
+
+        setShowCommonDropoffs(prev => {
+          const newShowCommon = [...prev];
           newShowCommon[index] = false;
-          setShowCommonDropoffs(newShowCommon);
-        }
-      });
-
-      if (blacklistAddressRef.current && !blacklistAddressRef.current.contains(event.target)) {
-        setShowBlacklistSuggestions(false);
+          return newShowCommon;
+        });
       }
-    };
+    });
 
+    if (blacklistAddressRef.current && !blacklistAddressRef.current.contains(event.target)) {
+      setShowBlacklistSuggestions(false);
+    }
+  }, []); // Empty deps - refs are stable
+
+  useEffect(() => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showDropoffSuggestions, showCommonDropoffs]);
+  }, [handleClickOutside]);
 
   const fetchAddressSuggestions = (input, callback) => {
     if (!input || input.length < 3) {
@@ -781,6 +810,34 @@ const PhoneRoom = () => {
       return;
     }
 
+    // Enhanced phone validation - check for valid US phone format
+    if (!PHONE_REGEX.test(phoneDigits)) {
+      setMessage('Please enter a valid phone number (area code cannot start with 0 or 1)');
+      setMessageType('error');
+      return;
+    }
+
+    // Validate addresses are in Bryan/College Station area
+    const validateAddress = (address) => {
+      const addressLower = address.toLowerCase();
+      return VALID_ZIP_CODES.some(zip => address.includes(zip)) ||
+             VALID_CITIES.some(city => addressLower.includes(city));
+    };
+
+    if (!validateAddress(formData.pickup)) {
+      setMessage('Pickup address must be in Bryan/College Station area');
+      setMessageType('error');
+      return;
+    }
+
+    for (const dropoff of formData.dropoffs) {
+      if (!validateAddress(dropoff)) {
+        setMessage('All dropoff addresses must be in Bryan/College Station area');
+        setMessageType('error');
+        return;
+      }
+    }
+
     setSubmitLoading(true);
     setMessage('Verifying information...');
     setMessageType('info');
@@ -806,20 +863,35 @@ const PhoneRoom = () => {
         return;
       }
 
+      // Improved blacklist matching - normalize and compare addresses
+      const normalizeAddress = (addr) => {
+        return addr.toLowerCase()
+          .replace(/\s+/g, ' ')
+          .replace(/[.,]/g, '')
+          .trim();
+      };
+
       const addressBlacklistRef = collection(db, 'addressBlacklist');
       const activeAddressBlacklist = getActiveBlacklists(blacklistedAddresses, 'address');
 
       for (const item of activeAddressBlacklist) {
-        if (item.appliesToPickup && formData.pickup.toLowerCase().includes(item.address.toLowerCase())) {
-          setMessage(`Pickup location is blacklisted: ${item.reason}`);
-          setMessageType('error');
-          setSubmitLoading(false);
-          return;
+        const blacklistedAddr = normalizeAddress(item.address);
+
+        if (item.appliesToPickup) {
+          const pickupAddr = normalizeAddress(formData.pickup);
+          // Check if blacklisted address is a substring OR if pickup is very similar
+          if (pickupAddr.includes(blacklistedAddr) || blacklistedAddr.includes(pickupAddr)) {
+            setMessage(`Pickup location is blacklisted: ${item.reason}`);
+            setMessageType('error');
+            setSubmitLoading(false);
+            return;
+          }
         }
-        
+
         if (item.appliesToDropoff) {
           for (const dropoff of formData.dropoffs) {
-            if (dropoff.toLowerCase().includes(item.address.toLowerCase())) {
+            const dropoffAddr = normalizeAddress(dropoff);
+            if (dropoffAddr.includes(blacklistedAddr) || blacklistedAddr.includes(dropoffAddr)) {
               setMessage(`Dropoff location is blacklisted: ${item.reason}`);
               setMessageType('error');
               setSubmitLoading(false);
@@ -862,7 +934,7 @@ const PhoneRoom = () => {
       }, 3000);
 
     } catch (error) {
-      console.error('Error submitting request:', error);
+      devError('Error submitting request:', error);
       setMessage('Error submitting request. Please try again.');
       setMessageType('error');
     } finally {
@@ -890,15 +962,32 @@ const PhoneRoom = () => {
     e.preventDefault();
 
     if (!blacklistRequest.value || !blacklistRequest.reason) {
-      alert('Please fill in all required fields');
+      setBlacklistMessage('Please fill in all required fields');
+      setBlacklistMessageType('error');
       return;
     }
 
     setBlacklistLoading(true);
+    setBlacklistMessage('');
 
     try {
       const collectionName = blacklistRequest.type === 'address' ? 'addressBlacklist' : 'phoneBlacklist';
-      
+
+      // Check for duplicates
+      const duplicateQuery = query(
+        collection(db, collectionName),
+        where(blacklistRequest.type === 'address' ? 'address' : 'phone', '==', blacklistRequest.value)
+      );
+      const duplicateSnapshot = await getDocs(duplicateQuery);
+
+      if (!duplicateSnapshot.empty) {
+        const existing = duplicateSnapshot.docs[0].data();
+        setBlacklistMessage(`This ${blacklistRequest.type} is already blacklisted (Status: ${existing.status})`);
+        setBlacklistMessageType('error');
+        setBlacklistLoading(false);
+        return;
+      }
+
       const requestData = {
         [blacklistRequest.type === 'address' ? 'address' : 'phone']: blacklistRequest.value,
         reason: blacklistRequest.reason,
@@ -920,20 +1009,26 @@ const PhoneRoom = () => {
 
       await addDoc(collection(db, collectionName), requestData);
 
-      alert('Blacklist request submitted! Waiting for director approval.');
-      
-      setBlacklistRequest({
-        type: 'address',
-        value: '',
-        reason: '',
-        scope: 'permanent',
-        appliesToPickup: true,
-        appliesToDropoff: true
-      });
-      setShowBlacklistModal(false);
+      setBlacklistMessage('Blacklist request submitted! Waiting for director approval.');
+      setBlacklistMessageType('success');
+
+      setTimeout(() => {
+        setBlacklistRequest({
+          type: 'address',
+          value: '',
+          reason: '',
+          scope: 'permanent',
+          appliesToPickup: true,
+          appliesToDropoff: true
+        });
+        setShowBlacklistModal(false);
+        setBlacklistMessage('');
+        setBlacklistMessageType('');
+      }, 2000);
     } catch (error) {
-      console.error('Error submitting blacklist request:', error);
-      alert('Error submitting request: ' + error.message);
+      devError('Error submitting blacklist request:', error);
+      setBlacklistMessage('Error submitting request: ' + error.message);
+      setBlacklistMessageType('error');
     } finally {
       setBlacklistLoading(false);
     }
@@ -1414,10 +1509,27 @@ const PhoneRoom = () => {
             <div className="p-6 space-y-5">
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                 <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> This request will be pending until a director approves it. 
+                  <strong>Note:</strong> This request will be pending until a director approves it.
                   Only approved entries will be blocked.
                 </p>
               </div>
+
+              {blacklistMessage && (
+                <div className={`p-4 rounded-xl flex items-start gap-3 ${
+                  blacklistMessageType === 'error'
+                    ? 'bg-red-50 border border-red-200'
+                    : 'bg-green-50 border border-green-200'
+                }`}>
+                  {blacklistMessageType === 'error' ? (
+                    <XCircle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
+                  ) : (
+                    <CheckCircle className="text-green-500 flex-shrink-0 mt-0.5" size={20} />
+                  )}
+                  <p className={`text-sm font-medium ${
+                    blacklistMessageType === 'error' ? 'text-red-700' : 'text-green-700'
+                  }`}>{blacklistMessage}</p>
+                </div>
+              )}
 
               <form onSubmit={submitBlacklistRequest} className="space-y-5">
                 <div>
