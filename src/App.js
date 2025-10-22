@@ -19,6 +19,7 @@ import AnnouncementsManager from './components/AnnouncementsManager';
 import MemberProfile from './components/MemberProfile';
 import AdminPanel from './components/AdminPanel';
 import CouchNavigator from './components/CouchNavigator';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children, adminOnly = false }) => {
@@ -198,7 +199,9 @@ function AppContent() {
           <Route path="/couch-navigator" element={
             <ProtectedRoute>
               <AppLayout>
-                <CouchNavigator />
+                <ErrorBoundary errorMessage="The Couch Navigator encountered an error. This may be due to Google Maps loading issues or a connectivity problem.">
+                  <CouchNavigator />
+                </ErrorBoundary>
               </AppLayout>
             </ProtectedRoute>
           } />

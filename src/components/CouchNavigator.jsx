@@ -1,10 +1,11 @@
-import { 
-  isNativeApp, 
-  requestNativeLocationPermission, 
-  getNativePosition, 
+import {
+  isNativeApp,
+  requestNativeLocationPermission,
+  getNativePosition,
   watchNativePosition,
   clearNativeWatch,
-  requestAlwaysLocationPermission
+  requestAlwaysLocationPermission,
+  getIOSSettingsInstructions
 } from '../capacitorUtils';
 import React, { useState, useEffect, useRef, memo } from 'react';
 import { db } from '../firebase';
@@ -14,7 +15,7 @@ import { useAuth } from '../AuthContext';
 import { MapPin, Send, Navigation, Phone, User, Car, Clock, AlertCircle, MessageSquare, CheckCircle, Bell, BellOff, X } from 'lucide-react';
 import { GoogleMap } from '@react-google-maps/api';
 import { useGoogleMaps } from '../GoogleMapsProvider';
-import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission } from '../notificationUtils';
+import { requestNotificationPermission, showNotification, playNotificationSound, checkNotificationPermission, initializeAudioContext } from '../notificationUtils';
 import { Capacitor } from '@capacitor/core';
 
 // Memoized map component to prevent re-renders
@@ -1179,22 +1180,11 @@ const CouchNavigator = () => {
     if (!activeNDR || !selectedCar) return;
 
     try {
-      const locationsRef = collection(db, 'carLocations');
       const carNum = parseInt(selectedCar, 10);
-      
-      const existingQuery = query(
-        locationsRef,
-        where('ndrId', '==', activeNDR.id),
-        where('carNumber', '==', carNum)
-      );
-      
-      const existingDocs = await getDocs(existingQuery);
-      
-      if (!existingDocs.empty) {
-        await deleteDoc(doc(db, 'carLocations', existingDocs.docs[0].id));
-        console.log('✅ Location document deleted');
-      }
 
+      // Step 1: Send "location sharing stopped" message FIRST
+      // This ensures the message is sent before we disable location tracking
+      console.log('📤 Sending location sharing stopped message...');
       await addDoc(collection(db, 'couchMessages'), {
         ndrId: activeNDR.id,
         carNumber: carNum,
@@ -1203,7 +1193,24 @@ const CouchNavigator = () => {
         message: '📍 Location sharing stopped',
         timestamp: Timestamp.now()
       });
+      console.log('✅ Message sent successfully');
 
+      // Step 2: Delete location document from Firestore
+      const locationsRef = collection(db, 'carLocations');
+      const existingQuery = query(
+        locationsRef,
+        where('ndrId', '==', activeNDR.id),
+        where('carNumber', '==', carNum)
+      );
+
+      const existingDocs = await getDocs(existingQuery);
+
+      if (!existingDocs.empty) {
+        await deleteDoc(doc(db, 'carLocations', existingDocs.docs[0].id));
+        console.log('✅ Location document deleted');
+      }
+
+      // Step 3: Update local state AFTER Firebase operations complete
       setLocationEnabled(false);
       setLastLocationUpdate(null);
       setEta(null);
@@ -1211,8 +1218,15 @@ const CouchNavigator = () => {
       setDebugStatus('📍 Location sharing stopped');
       setTimeout(() => setDebugStatus(''), 2000);
     } catch (error) {
-      console.error('Error stopping location sharing:', error);
-      setDebugStatus('❌ Error stopping location');
+      console.error('❌ Error stopping location sharing:', error);
+
+      // Even if message fails, still disable location tracking locally
+      setLocationEnabled(false);
+      setLastLocationUpdate(null);
+      setEta(null);
+      localStorage.setItem('locationEnabled', 'false');
+
+      setDebugStatus('❌ Error stopping location - check connection');
       setTimeout(() => setDebugStatus(''), 3000);
     }
   };
@@ -1276,6 +1290,38 @@ const CouchNavigator = () => {
     );
   }
 
+  if (googleMapsError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg border-2 border-red-200 p-6">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+              <AlertCircle size={32} className="text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              Google Maps Failed to Load
+            </h2>
+            <p className="text-gray-600 mb-4">
+              The map couldn't be loaded. This may be due to:
+            </p>
+            <ul className="text-left text-sm text-gray-600 mb-6 space-y-1">
+              <li>• No internet connection</li>
+              <li>• Invalid Google Maps API key</li>
+              <li>• Billing issues with Google Cloud</li>
+              <li>• API quota exceeded</li>
+            </ul>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!activeNDR) {
     return (
       <div className="space-y-6 p-4">
@@ -1330,6 +1376,9 @@ const CouchNavigator = () => {
             <button
               onClick={async () => {
                 if (!notificationsEnabled) {
+                  // Initialize audio context on first user interaction (iOS requirement)
+                  initializeAudioContext();
+
                   const granted = await requestNotificationPermission();
                   setNotificationsEnabled(granted);
                   if (granted) {
@@ -1537,23 +1586,40 @@ const CouchNavigator = () => {
                             try {
                               const result = await requestAlwaysLocationPermission();
                               console.log('Always permission result:', result);
-                              
+
                               if (result.success || result.granted) {
                                 setHasAlwaysPermission(true);
-                                setDebugStatus('✅ Background tracking enabled!');
-                                setTimeout(() => setDebugStatus(''), 3000);
+                                setDebugStatus('✅ Permission granted! Enable "Always" in Settings for background tracking');
+
+                                // Show instructions for enabling "Always" permission
+                                if (result.message) {
+                                  setTimeout(() => {
+                                    const instructions = getIOSSettingsInstructions();
+                                    if (confirm('📍 Background Location Setup\n\n' + instructions.alwaysLocation + '\n\nWould you like to open Settings now?')) {
+                                      // iOS will open Settings app if available
+                                      window.open('app-settings:');
+                                    }
+                                  }, 1000);
+                                }
+
+                                setTimeout(() => setDebugStatus(''), 5000);
+                              } else if (result.needsSettings) {
+                                // Permission denied - must go to Settings
+                                const instructions = getIOSSettingsInstructions();
+                                alert('📍 Background Location Access Required\n\n' + instructions.alwaysLocation);
                               } else {
-                                // Show instructions
-                                alert('To enable background tracking:\n\n1. Open iPhone Settings\n2. Find "Carpool Internal"\n3. Tap Location\n4. Select "Always"');
+                                // Generic error
+                                alert('Unable to enable background tracking. Please check your device settings.');
                               }
                             } catch (error) {
                               console.error('Background permission error:', error);
-                              alert('To enable background tracking:\n\n1. Open iPhone Settings\n2. Find "Carpool Internal"\n3. Tap Location\n4. Select "Always"');
+                              const instructions = getIOSSettingsInstructions();
+                              alert('📍 Background Location Setup\n\n' + instructions.alwaysLocation);
                             }
                           }}
                           className="w-full py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition text-sm touch-manipulation"
                         >
-                          Enable Background Tracking
+                          📍 Enable Background Tracking
                         </button>
                       )}
                       

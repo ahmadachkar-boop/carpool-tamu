@@ -25,38 +25,71 @@ export const requestNativeLocationPermission = async () => {
 };
 
 // Request "Always Allow" background location permission
+// NOTE: iOS requires a two-step process:
+// 1. First grant "When In Use" permission (via requestNativeLocationPermission)
+// 2. Then iOS may auto-prompt for "Always" after the app demonstrates background need
+// 3. Or user must manually enable "Always" in iPhone Settings > App > Location
 export const requestAlwaysLocationPermission = async () => {
   try {
-    console.log('📍 Requesting ALWAYS location permission...');
-    
-    // First check current status
+    console.log('📍 Checking background location permission status...');
+
+    // Check current permission state
     const currentPerms = await Geolocation.checkPermissions();
-    console.log('Current location permission:', currentPerms.location);
-    
+    console.log('Current location permission:', currentPerms);
+
     if (currentPerms.location === 'denied') {
-      console.log('❌ Location permission denied - cannot request always');
-      return { 
-        success: false, 
-        error: 'Location permission is denied. Please enable it in Settings.' 
+      console.log('❌ Location permission denied - user must enable in Settings');
+      return {
+        success: false,
+        error: 'Location permission is denied. Please enable it in Settings.',
+        needsSettings: true
       };
     }
-    
-    // Request permissions with coarseLocation: false for more accurate tracking
-    const permissions = await Geolocation.requestPermissions({
-      permissions: ['location', 'coarseLocation']
-    });
-    
+
+    // iOS Limitation: Cannot directly request "Always" permission
+    // The Geolocation plugin can only request "When In Use"
+    // For "Always" permission, iOS requires:
+    // - App to already have "When In Use" permission
+    // - App to demonstrate it needs background tracking
+    // - Then iOS will auto-prompt, OR user must manually enable in Settings
+
+    if (currentPerms.location === 'granted') {
+      // We have "When In Use" but we don't know if we have "Always"
+      // iOS doesn't expose this distinction through the Capacitor API
+      console.log('✅ Location permission granted (When In Use or Always)');
+
+      // Start using location in background - iOS will auto-prompt for "Always" if appropriate
+      return {
+        success: true,
+        granted: true,
+        message: 'Location permission granted. If using iOS, you may need to enable "Always" in Settings for background tracking.'
+      };
+    }
+
+    // Permission is in "prompt" state - request it
+    const permissions = await Geolocation.requestPermissions();
     console.log('📍 Permission result:', permissions);
-    
+
     if (permissions.location === 'granted') {
-      console.log('✅ Always permission granted (or already had while using)!');
-      return { success: true };
+      console.log('✅ Permission granted - iOS may prompt for "Always" after background use');
+      return {
+        success: true,
+        granted: true,
+        message: 'Permission granted. Continue using the app, and iOS may prompt for background access.'
+      };
     } else {
-      return { success: false, error: 'Always permission denied' };
+      return {
+        success: false,
+        error: 'Permission denied',
+        needsSettings: true
+      };
     }
   } catch (error) {
-    console.error('Always permission error:', error);
-    return { success: false, error: error.message };
+    console.error('Background permission error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 
@@ -135,3 +168,49 @@ export const clearNativeWatch = async (watchId) => {
     await Geolocation.clearWatch({ id: watchId });
   }
 };
+
+// Get iOS-specific settings instructions
+export const getIOSSettingsInstructions = () => {
+  return {
+    alwaysLocation: `To enable background location tracking on iOS:
+
+1. Open your iPhone Settings app
+2. Scroll down and find "Carpool Internal"
+3. Tap on it
+4. Tap "Location"
+5. Select "Always"
+6. Return to the app
+
+This allows the app to track your location even when it's in the background, which is essential for the couch to monitor your position during rides.`,
+
+    notifications: `To enable notifications on iOS:
+
+1. Open your iPhone Settings app
+2. Scroll down and find "Carpool Internal"
+3. Tap on it
+4. Tap "Notifications"
+5. Enable "Allow Notifications"
+6. Choose your preferred notification style
+
+This allows you to receive messages from the couch even when the app is in the background.`
+  };
+};
+
+// IMPORTANT NOTE FOR DEVELOPERS:
+// For production-grade background location tracking on iOS, consider using:
+// @capacitor-community/background-geolocation
+//
+// The standard @capacitor/geolocation plugin has limitations:
+// - Background tracking stops after ~10 minutes when app is backgrounded
+// - No significant location change monitoring
+// - Limited battery optimization
+//
+// To install the enhanced plugin:
+// npm install @capacitor-community/background-geolocation
+// npx cap sync
+//
+// This would provide:
+// - Continuous background tracking (even when app is terminated)
+// - Motion detection (stops tracking when stationary)
+// - Better battery management
+// - Geofencing support
