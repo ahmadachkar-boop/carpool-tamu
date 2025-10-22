@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
-import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split } from 'lucide-react';
+import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation } from 'lucide-react';
+import { useGoogleMaps } from '../GoogleMapsProvider';
 
 const RideManagement = () => {
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
+  const { isLoaded: googleMapsLoaded } = useGoogleMaps();
   const [rides, setRides] = useState({ pending: [], active: [], completed: [] });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
@@ -14,11 +16,275 @@ const RideManagement = () => {
   const [assigningRide, setAssigningRide] = useState(null);
   const [splittingRide, setSplittingRide] = useState(null);
   const [splitRiders, setSplitRiders] = useState({ ride1: 1, ride2: 1 });
+  
+  // NEW: Car status tracking
+  const [carLocations, setCarLocations] = useState({});
+  const [carStatuses, setCarStatuses] = useState({});
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // NEW: ETA tracking for pending rides
+  const [rideETAs, setRideETAs] = useState({}); // { rideId: { minutes, fastestCar, calculating } }
+
+  // NEW: Calculate ETAs for pending rides using real routing
+  useEffect(() => {
+    if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0) {
+      return;
+    }
+
+    const calculateAllETAs = async () => {
+      const newETAs = {};
+      const directionsService = new window.google.maps.DirectionsService();
+
+      for (const ride of rides.pending) {
+        // Mark as calculating
+        setRideETAs(prev => ({
+          ...prev,
+          [ride.id]: { ...prev[ride.id], calculating: true }
+        }));
+
+        try {
+          // Calculate availability for each car
+          const carAvailability = [];
+
+          for (let carNum = 1; carNum <= availableCars; carNum++) {
+            const activeRide = rides.active.find(r => r.carNumber === carNum);
+            const location = carLocations[carNum];
+
+            if (!activeRide) {
+              // Car is free
+              if (location && location.latitude && location.longitude) {
+                try {
+                  const result = await new Promise((resolve, reject) => {
+                    directionsService.route(
+                      {
+                        origin: { lat: location.latitude, lng: location.longitude },
+                        destination: ride.pickup,
+                        travelMode: window.google.maps.TravelMode.DRIVING,
+                        drivingOptions: {
+                          departureTime: new Date(),
+                          trafficModel: 'bestguess'
+                        }
+                      },
+                      (result, status) => {
+                        if (status === 'OK') resolve(result);
+                        else reject(status);
+                      }
+                    );
+                  });
+
+                  const durationInTraffic = result.routes[0].legs[0].duration_in_traffic || result.routes[0].legs[0].duration;
+                  const minutesToPickup = Math.ceil(durationInTraffic.value / 60);
+                  
+                  carAvailability.push({
+                    carNumber: carNum,
+                    availableInMinutes: minutesToPickup
+                  });
+                } catch (error) {
+                  carAvailability.push({
+                    carNumber: carNum,
+                    availableInMinutes: 10
+                  });
+                }
+              } else {
+                carAvailability.push({
+                  carNumber: carNum,
+                  availableInMinutes: 10
+                });
+              }
+            } else {
+              // Car is busy - calculate remaining route time
+              try {
+                const waypoints = [];
+                const dropoffs = activeRide.dropoffs || [activeRide.dropoff];
+                
+                let origin;
+                if (activeRide.pickedUpAt) {
+                  origin = activeRide.pickup;
+                } else if (location && location.latitude && location.longitude) {
+                  origin = { lat: location.latitude, lng: location.longitude };
+                  waypoints.push({ location: activeRide.pickup, stopover: true });
+                } else {
+                  origin = activeRide.pickup;
+                }
+
+                dropoffs.forEach((dropoff, idx) => {
+                  if (idx < dropoffs.length - 1) {
+                    waypoints.push({ location: dropoff, stopover: true });
+                  }
+                });
+
+                const finalDropoff = dropoffs[dropoffs.length - 1];
+
+                const currentRouteResult = await new Promise((resolve, reject) => {
+                  directionsService.route(
+                    {
+                      origin: origin,
+                      destination: finalDropoff,
+                      waypoints: waypoints,
+                      travelMode: window.google.maps.TravelMode.DRIVING,
+                      drivingOptions: {
+                        departureTime: new Date(),
+                        trafficModel: 'bestguess'
+                      }
+                    },
+                    (result, status) => {
+                      if (status === 'OK') resolve(result);
+                      else reject(status);
+                    }
+                  );
+                });
+
+                let totalCurrentRouteTime = 0;
+                currentRouteResult.routes[0].legs.forEach(leg => {
+                  const duration = leg.duration_in_traffic || leg.duration;
+                  totalCurrentRouteTime += duration.value;
+                });
+
+                const bufferMinutes = (waypoints.length + 1) * 2;
+                const currentRouteMinutes = Math.ceil(totalCurrentRouteTime / 60) + bufferMinutes;
+
+                const toNewPickupResult = await new Promise((resolve, reject) => {
+                  directionsService.route(
+                    {
+                      origin: finalDropoff,
+                      destination: ride.pickup,
+                      travelMode: window.google.maps.TravelMode.DRIVING,
+                      drivingOptions: {
+                        departureTime: new Date(Date.now() + totalCurrentRouteTime * 1000),
+                        trafficModel: 'bestguess'
+                      }
+                    },
+                    (result, status) => {
+                      if (status === 'OK') resolve(result);
+                      else reject(status);
+                    }
+                  );
+                });
+
+                const toNewPickupDuration = toNewPickupResult.routes[0].legs[0].duration_in_traffic || toNewPickupResult.routes[0].legs[0].duration;
+                const toNewPickupMinutes = Math.ceil(toNewPickupDuration.value / 60);
+
+                const totalAvailableInMinutes = currentRouteMinutes + toNewPickupMinutes;
+
+                carAvailability.push({
+                  carNumber: carNum,
+                  availableInMinutes: totalAvailableInMinutes
+                });
+              } catch (error) {
+                carAvailability.push({
+                  carNumber: carNum,
+                  availableInMinutes: 30
+                });
+              }
+            }
+          }
+
+          if (carAvailability.length > 0) {
+            carAvailability.sort((a, b) => a.availableInMinutes - b.availableInMinutes);
+            const fastest = carAvailability[0];
+            
+            newETAs[ride.id] = {
+              minutes: fastest.availableInMinutes,
+              fastestCar: fastest.carNumber,
+              calculating: false,
+              timestamp: Date.now()
+            };
+          }
+        } catch (error) {
+          console.error(`Error calculating ETA for ride ${ride.id}:`, error);
+          newETAs[ride.id] = {
+            minutes: null,
+            fastestCar: null,
+            calculating: false,
+            error: true
+          };
+        }
+      }
+
+      setRideETAs(prev => ({ ...prev, ...newETAs }));
+    };
+
+    // Calculate ETAs with a debounce
+    const timer = setTimeout(calculateAllETAs, 2000);
+    return () => clearTimeout(timer);
+  }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
+
+  // NEW: Update current time every second for timer displays
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!activeNDR) return;
     setAvailableCars(activeNDR.availableCars || 0);
   }, [activeNDR]);
+
+  // NEW: Listen to car locations for status board
+  useEffect(() => {
+    if (!activeNDR) return;
+
+    const locationsRef = collection(db, 'carLocations');
+    const locationsQuery = query(
+      locationsRef,
+      where('ndrId', '==', activeNDR.id)
+    );
+
+    const unsubscribe = onSnapshot(locationsQuery, (snapshot) => {
+      const locations = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        locations[data.carNumber] = {
+          ...data,
+          updatedAt: data.updatedAt?.toDate()
+        };
+      });
+      setCarLocations(locations);
+    });
+
+    return () => unsubscribe();
+  }, [activeNDR]);
+
+  // NEW: Calculate car statuses based on rides
+  useEffect(() => {
+    if (!activeNDR || !availableCars) return;
+
+    const statuses = {};
+    
+    // Initialize all cars as available
+    for (let i = 1; i <= availableCars; i++) {
+      statuses[i] = {
+        status: 'available',
+        currentRide: null,
+        ridesCompleted: 0,
+        lastActivity: null
+      };
+    }
+
+    // Update statuses based on active rides
+    rides.active.forEach(ride => {
+      if (ride.carNumber && statuses[ride.carNumber]) {
+        statuses[ride.carNumber] = {
+          status: ride.pickedUpAt ? 'with_patron' : 'en_route',
+          currentRide: ride,
+          ridesCompleted: statuses[ride.carNumber].ridesCompleted,
+          lastActivity: ride.pickedUpAt || ride.assignedAt
+        };
+      }
+    });
+
+    // Count completed rides per car
+    rides.completed.forEach(ride => {
+      if (ride.carNumber && statuses[ride.carNumber] && ride.status === 'completed') {
+        statuses[ride.carNumber].ridesCompleted++;
+      }
+    });
+
+    setCarStatuses(statuses);
+  }, [rides, availableCars, activeNDR]);
 
   useEffect(() => {
     if (!activeNDR) {
@@ -99,6 +365,23 @@ const RideManagement = () => {
       if (unsubCompleted) unsubCompleted();
     };
   }, [activeNDR]);
+
+  // NEW: Calculate wait time in minutes
+  const calculateWaitTime = (requestedAt) => {
+    if (!requestedAt) return 0;
+    const diffMs = currentTime - requestedAt;
+    return Math.floor(diffMs / (1000 * 60));
+  };
+
+  // NEW: Format wait time display
+  const formatWaitTime = (minutes) => {
+    if (minutes < 1) return '<1 min';
+    if (minutes === 1) return '1 min';
+    return `${minutes} mins`;
+  };
+
+  // NEW: Determine if wait time is concerning
+  const isLongWait = (minutes) => minutes >= 15;
 
   const openAssignCar = (ride) => {
     setAssigningRide({ ...ride, selectedCar: '' });
@@ -193,7 +476,7 @@ const RideManagement = () => {
   const startEdit = (ride) => {
     setEditingRide({
       ...ride,
-      dropoffs: ride.dropoffs || [ride.dropoff] // Handle legacy single dropoff
+      dropoffs: ride.dropoffs || [ride.dropoff]
     });
   };
 
@@ -239,37 +522,22 @@ const RideManagement = () => {
     }
 
     try {
-      // Update original ride with first group of riders
       await updateDoc(doc(db, 'rides', splittingRide.id), {
-        riders: splitRiders.ride1,
-        splitFrom: splittingRide.id,
-        splitNote: `Split into 2 rides: ${splitRiders.ride1} + ${splitRiders.ride2} riders`
+        riders: splitRiders.ride1
       });
 
-      // Create new ride with second group of riders
-      const newRideData = {
+      await addDoc(collection(db, 'rides'), {
+        ndrId: splittingRide.ndrId,
         patronName: splittingRide.patronName,
         phone: splittingRide.phone,
         pickup: splittingRide.pickup,
         dropoffs: splittingRide.dropoffs || [splittingRide.dropoff],
         riders: splitRiders.ride2,
-        status: splittingRide.status,
-        carNumber: null,
-        assignedDriver: null,
+        status: 'pending',
         requestedAt: Timestamp.now(),
-        completedAt: null,
-        willingToCombine: false,
-        carInfo: null,
-        requestType: 'split',
-        ndrId: activeNDR.id,
-        eventId: activeNDR.eventId,
-        pickupCoordinates: splittingRide.pickupCoordinates || null,
-        dropoffCoordinates: splittingRide.dropoffCoordinates || null,
-        splitFrom: splittingRide.id,
-        splitNote: `Split from original ride: ${splitRiders.ride1} + ${splitRiders.ride2} riders`
-      };
-
-      await addDoc(collection(db, 'rides'), newRideData);
+        requestedBy: splittingRide.requestedBy,
+        splitFrom: splittingRide.id
+      });
 
       alert('Ride split successfully!');
       setSplittingRide(null);
@@ -324,6 +592,34 @@ const RideManagement = () => {
       terminated: 'bg-orange-100 text-orange-800'
     };
     return badges[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  // NEW: Get car status color
+  const getCarStatusColor = (status) => {
+    switch (status) {
+      case 'available':
+        return 'bg-green-500';
+      case 'en_route':
+        return 'bg-blue-500';
+      case 'with_patron':
+        return 'bg-yellow-500';
+      default:
+        return 'bg-gray-400';
+    }
+  };
+
+  // NEW: Get car status label
+  const getCarStatusLabel = (status) => {
+    switch (status) {
+      case 'available':
+        return 'AVAILABLE';
+      case 'en_route':
+        return 'EN ROUTE';
+      case 'with_patron':
+        return 'WITH PATRON';
+      default:
+        return 'UNKNOWN';
+    }
   };
 
   if (ndrLoading) {
@@ -383,6 +679,77 @@ const RideManagement = () => {
         </div>
       </div>
 
+      {/* NEW: Car Status Board */}
+      {availableCars > 0 && (
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Car size={20} />
+            Car Status Board
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: availableCars }, (_, i) => i + 1).map(carNum => {
+              const status = carStatuses[carNum] || { status: 'available', currentRide: null, ridesCompleted: 0 };
+              const location = carLocations[carNum];
+              
+              return (
+                <div key={carNum} className="border-2 border-gray-200 rounded-xl p-4 hover:shadow-md transition">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Car size={20} className="text-gray-700" />
+                      <span className="font-bold text-lg text-gray-900">Car {carNum}</span>
+                    </div>
+                    <div className={`w-3 h-3 rounded-full ${getCarStatusColor(status.status)}`}></div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="bg-gray-50 rounded-lg px-3 py-2">
+                      <p className={`text-xs font-bold ${
+                        status.status === 'available' ? 'text-green-700' :
+                        status.status === 'en_route' ? 'text-blue-700' :
+                        'text-yellow-700'
+                      }`}>
+                        {getCarStatusLabel(status.status)}
+                      </p>
+                    </div>
+                    
+                    {status.currentRide && (
+                      <div className="text-xs space-y-1">
+                        <p className="font-semibold text-gray-900 truncate">
+                          {status.currentRide.patronName}
+                        </p>
+                        <p className="text-gray-600">
+                          {status.currentRide.riders} {status.currentRide.riders === 1 ? 'rider' : 'riders'}
+                        </p>
+                        {status.currentRide.pickedUpAt ? (
+                          <p className="text-purple-600 font-semibold">
+                            → {status.currentRide.dropoffs?.[0]?.substring(0, 25) || 'Dropoff'}...
+                          </p>
+                        ) : (
+                          <p className="text-blue-600 font-semibold">
+                            → {status.currentRide.pickup?.substring(0, 25)}...
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">
+                        {status.ridesCompleted} {status.ridesCompleted === 1 ? 'ride' : 'rides'} tonight
+                      </span>
+                      {location && (
+                        <span className="text-xs text-gray-400">
+                          {Math.floor((currentTime - location.updatedAt) / (1000 * 60))}m ago
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {availableCars === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-yellow-800 font-medium">
@@ -419,268 +786,361 @@ const RideManagement = () => {
               No {activeTab} rides
             </div>
           ) : (
-            rides[activeTab].map(ride => (
-              <div key={ride.id} className="mb-4 p-4 border border-gray-200 rounded-lg">
-                {editingRide?.id === ride.id ? (
-                  /* EDIT MODE */
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      value={editingRide.patronName}
-                      onChange={(e) => setEditingRide({...editingRide, patronName: e.target.value})}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder="Name"
-                    />
-                    <input
-                      type="tel"
-                      value={editingRide.phone}
-                      onChange={(e) => setEditingRide({...editingRide, phone: e.target.value})}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder="Phone"
-                    />
-                    <input
-                      type="text"
-                      value={editingRide.pickup}
-                      onChange={(e) => setEditingRide({...editingRide, pickup: e.target.value})}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder="Pickup"
-                    />
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Dropoff Locations
-                      </label>
-                      {editingRide.dropoffs.map((dropoff, index) => (
-                        <div key={index} className="flex gap-2 mb-2">
-                          <input
-                            type="text"
-                            value={dropoff}
-                            onChange={(e) => updateDropoff(index, e.target.value)}
-                            className="flex-1 px-3 py-2 border rounded"
-                            placeholder={`Dropoff ${index + 1}`}
-                          />
-                          {editingRide.dropoffs.length > 1 && (
-                            <button
-                              onClick={() => removeDropoffFromEdit(index)}
-                              className="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                            >
-                              <X size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        onClick={addDropoffToEdit}
-                        className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
-                      >
-                        + Add Dropoff
-                      </button>
-                    </div>
-
-                    <input
-                      type="number"
-                      value={editingRide.riders}
-                      onChange={(e) => setEditingRide({...editingRide, riders: parseInt(e.target.value)})}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder="Riders"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={saveEdit}
-                        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingRide(null)}
-                        className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : assigningRide?.id === ride.id ? (
-                  /* CAR ASSIGNMENT MODE */
-                  <div className="space-y-3">
-                    <p className="font-semibold">Assign car to {ride.patronName}</p>
-                    <select
-                      value={assigningRide.selectedCar}
-                      onChange={(e) => setAssigningRide({...assigningRide, selectedCar: e.target.value})}
-                      className="w-full px-3 py-2 border rounded"
-                    >
-                      <option value="">Select a car...</option>
-                      {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => (
-                        <option key={num} value={num}>Car {num}</option>
-                      ))}
-                    </select>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={assignCar}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                      >
-                        Assign
-                      </button>
-                      <button
-                        onClick={() => setAssigningRide(null)}
-                        className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* NORMAL DISPLAY MODE */
-                  <>
-                    <div className="flex justify-between items-start mb-3">
+            rides[activeTab].map((ride, index) => {
+              // NEW: Calculate wait time for this ride
+              const waitMinutes = calculateWaitTime(ride.requestedAt);
+              const isWaitLong = isLongWait(waitMinutes);
+              
+              return (
+                <div 
+                  key={ride.id} 
+                  className={`mb-4 p-4 border-2 rounded-lg ${
+                    isWaitLong && activeTab === 'pending' ? 'border-red-500 bg-red-50' : 'border-gray-200'
+                  }`}
+                >
+                  {editingRide?.id === ride.id ? (
+                    /* EDIT MODE */
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={editingRide.patronName}
+                        onChange={(e) => setEditingRide({...editingRide, patronName: e.target.value})}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder="Name"
+                      />
+                      <input
+                        type="tel"
+                        value={editingRide.phone}
+                        onChange={(e) => setEditingRide({...editingRide, phone: e.target.value})}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder="Phone"
+                      />
+                      <input
+                        type="text"
+                        value={editingRide.pickup}
+                        onChange={(e) => setEditingRide({...editingRide, pickup: e.target.value})}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder="Pickup"
+                      />
+                      
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900">{ride.patronName}</h3>
-                        <p className="text-sm text-gray-600 flex items-center gap-1">
-                          <Phone size={14} />
-                          {ride.phone}
-                        </p>
-                        <p className="text-sm text-gray-600 flex items-center gap-1">
-                          <Users size={14} />
-                          {ride.riders} {ride.riders === 1 ? 'Rider' : 'Riders'}
-                        </p>
-                        {ride.splitNote && (
-                          <p className="text-xs text-purple-600 mt-1 flex items-center gap-1">
-                            <Split size={12} />
-                            {ride.splitNote}
-                          </p>
-                        )}
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Dropoff Locations
+                        </label>
+                        {editingRide.dropoffs.map((dropoff, dropoffIndex) => (
+                          <div key={dropoffIndex} className="flex gap-2 mb-2">
+                            <input
+                              type="text"
+                              value={dropoff}
+                              onChange={(e) => updateDropoff(dropoffIndex, e.target.value)}
+                              className="flex-1 px-3 py-2 border rounded"
+                              placeholder={`Dropoff ${dropoffIndex + 1}`}
+                            />
+                            {editingRide.dropoffs.length > 1 && (
+                              <button
+                                onClick={() => removeDropoffFromEdit(dropoffIndex)}
+                                className="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          onClick={addDropoffToEdit}
+                          className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm"
+                        >
+                          + Add Dropoff
+                        </button>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500 flex items-center gap-1 justify-end">
-                          <Clock size={12} />
-                          {formatTime(ride.requestedAt)}
-                        </p>
-                        {ride.carNumber && (
-                          <p className="text-sm font-semibold text-blue-600 mt-1">
-                            Car {ride.carNumber}
-                          </p>
-                        )}
-                        {ride.assignedDriver && (
-                          <p className="text-xs text-gray-600">
-                            {ride.assignedDriver}
-                          </p>
-                        )}
+
+                      <input
+                        type="number"
+                        value={editingRide.riders}
+                        onChange={(e) => setEditingRide({...editingRide, riders: parseInt(e.target.value)})}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder="Riders"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={saveEdit}
+                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingRide(null)}
+                          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
+                  ) : assigningRide?.id === ride.id ? (
+                    /* CAR ASSIGNMENT MODE */
+                    <div className="space-y-3">
+                      <p className="font-semibold">Assign car to {ride.patronName}</p>
+                      <select
+                        value={assigningRide.selectedCar}
+                        onChange={(e) => setAssigningRide({...assigningRide, selectedCar: e.target.value})}
+                        className="w-full px-3 py-2 border rounded"
+                      >
+                        <option value="">Select a car...</option>
+                        {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => (
+                          <option key={num} value={num}>Car {num}</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={assignCar}
+                          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                          Assign
+                        </button>
+                        <button
+                          onClick={() => setAssigningRide(null)}
+                          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* NORMAL DISPLAY MODE */
+                    <>
+                      {/* NEW: Queue Position for Pending Rides */}
+                      {activeTab === 'pending' && (
+                        <div className="mb-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                              index === 0 ? 'bg-green-500 text-white' :
+                              index === 1 ? 'bg-yellow-500 text-gray-900' :
+                              'bg-gray-300 text-gray-700'
+                            }`}>
+                              #{index + 1} in Queue
+                            </span>
+                            {index === 0 && (
+                              <span className="text-sm font-bold text-green-600 animate-pulse">
+                                ← NEXT UP
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* NEW: Wait Time Display */}
+                          <div className="flex flex-col gap-2">
+                            {/* Elapsed wait time */}
+                            <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                              isWaitLong ? 'bg-red-500 text-white animate-pulse' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              <Clock size={16} />
+                              <span className="text-sm font-bold">
+                                Waiting: {formatWaitTime(waitMinutes)}
+                              </span>
+                              {isWaitLong && (
+                                <AlertTriangle size={16} className="animate-bounce" />
+                              )}
+                            </div>
+                            
+                            {/* ETA to pickup */}
+                            {rideETAs[ride.id] && (
+                              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                                rideETAs[ride.id].calculating 
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                <Navigation size={16} />
+                                {rideETAs[ride.id].calculating ? (
+                                  <span className="text-xs font-bold">Calculating ETA...</span>
+                                ) : rideETAs[ride.id].error ? (
+                                  <span className="text-xs font-bold">ETA unavailable</span>
+                                ) : (
+                                  <>
+                                    <span className="text-xs font-bold">
+                                      ETA: ~{rideETAs[ride.id].minutes} min
+                                    </span>
+                                    <span className="text-[10px] bg-green-200 px-1.5 py-0.5 rounded">
+                                      Car {rideETAs[ride.id].fastestCar}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                    <div className="bg-gray-50 rounded p-3 mb-3 space-y-2">
-                      <p className="text-sm flex items-start gap-2">
-                        <MapPin size={16} className="text-green-600 mt-0.5 flex-shrink-0" />
-                        <span><span className="font-semibold">Pickup:</span> {ride.pickup}</span>
-                      </p>
-                      {(ride.dropoffs || [ride.dropoff]).map((dropoff, index) => (
-                        <p key={index} className="text-sm flex items-start gap-2">
-                          <MapPin size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+                      {/* NEW: Wait Time Display for Active Rides */}
+                      {activeTab === 'active' && (
+                        <div className="mb-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="px-3 py-1 rounded-full text-sm font-bold bg-purple-500 text-white">
+                              Car {ride.carNumber}
+                            </span>
+                            {ride.pickedUpAt ? (
+                              <span className="text-sm font-semibold text-yellow-600">
+                                In Transit
+                              </span>
+                            ) : (
+                              <span className="text-sm font-semibold text-blue-600">
+                                En Route to Pickup
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-800">
+                            <Clock size={16} />
+                            <span className="text-sm font-bold">
+                              Total: {formatWaitTime(waitMinutes)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {isWaitLong && activeTab === 'pending' && (
+                        <div className="mb-3 bg-red-100 border-2 border-red-500 rounded-lg p-3 flex items-start gap-2">
+                          <AlertTriangle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-bold text-red-900">
+                              ⚠️ LONG WAIT ALERT
+                            </p>
+                            <p className="text-xs text-red-700">
+                              This patron has been waiting for over 15 minutes. Consider prioritizing this ride.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-900">{ride.patronName}</h3>
+                          <p className="text-sm text-gray-600 flex items-center gap-1">
+                            <Phone size={14} />
+                            {ride.phone}
+                          </p>
+                          <p className="text-sm text-gray-600 flex items-center gap-1">
+                            <Users size={14} />
+                            {ride.riders} {ride.riders === 1 ? 'rider' : 'riders'}
+                          </p>
+                        </div>
+                        
+                        <div className="text-right text-xs text-gray-500">
+                          <p>Requested: {formatTime(ride.requestedAt)}</p>
+                          {ride.assignedAt && <p>Assigned: {formatTime(ride.assignedAt)}</p>}
+                          {ride.pickedUpAt && <p>Picked up: {formatTime(ride.pickedUpAt)}</p>}
+                        </div>
+                      </div>
+
+                      <div className="mb-3 space-y-2 text-sm">
+                        <p className="flex items-start gap-2">
+                          <MapPin size={14} className="text-blue-600 mt-1 flex-shrink-0" />
                           <span>
-                            <span className="font-semibold">
-                              Dropoff {(ride.dropoffs || [ride.dropoff]).length > 1 ? `${index + 1}` : ''}:
-                            </span> {dropoff}
+                            <span className="font-semibold">Pickup:</span> {ride.pickup}
                           </span>
                         </p>
-                      ))}
-                    </div>
+                        {(ride.dropoffs || [ride.dropoff]).map((dropoff, dropoffIndex) => (
+                          <p key={dropoffIndex} className="flex items-start gap-2">
+                            <MapPin size={14} className="text-red-600 mt-1 flex-shrink-0" />
+                            <span>
+                              <span className="font-semibold">
+                                Drop {(ride.dropoffs?.length || 0) > 1 ? `${dropoffIndex + 1}` : ''}:
+                              </span> {dropoff}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
 
-                    {activeTab === 'completed' && (
-                      <div className="mb-3">
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(ride.status)}`}>
-                          {ride.status.toUpperCase()}
-                        </span>
-                        {ride.cancellationReason && (
-                          <p className="text-xs text-gray-600 mt-2">
-                            <span className="font-semibold">Cancelled:</span> {ride.cancellationReason}
-                          </p>
+                      {activeTab === 'completed' && (
+                        <div className="mb-3">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(ride.status)}`}>
+                            {ride.status.toUpperCase()}
+                          </span>
+                          {ride.cancellationReason && (
+                            <p className="text-xs text-gray-600 mt-2">
+                              <span className="font-semibold">Cancelled:</span> {ride.cancellationReason}
+                            </p>
+                          )}
+                          {ride.terminationReason && (
+                            <p className="text-xs text-gray-600 mt-2">
+                              <span className="font-semibold">Terminated:</span> {ride.terminationReason}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ACTION BUTTONS */}
+                      <div className="flex gap-2 flex-wrap">
+                        {activeTab === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => openAssignCar(ride)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                            >
+                              Assign Car
+                            </button>
+                            <button
+                              onClick={() => openSplitRide(ride)}
+                              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
+                            >
+                              <Split size={16} />
+                              Split
+                            </button>
+                            <button
+                              onClick={() => startEdit(ride)}
+                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => cancelRide(ride.id)}
+                              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </>
                         )}
-                        {ride.terminationReason && (
-                          <p className="text-xs text-gray-600 mt-2">
-                            <span className="font-semibold">Terminated:</span> {ride.terminationReason}
-                          </p>
+
+                        {activeTab === 'active' && (
+                          <>
+                            {!ride.pickedUpAt && (
+                              <button
+                                onClick={() => startRide(ride.id)}
+                                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                              >
+                                Mark Picked Up
+                              </button>
+                            )}
+                            <button
+                              onClick={() => completeRide(ride.id)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                            >
+                              Complete
+                            </button>
+                            <button
+                              onClick={() => startEdit(ride)}
+                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => cancelRide(ride.id)}
+                              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => terminateRide(ride.id)}
+                              className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm"
+                            >
+                              Terminate
+                            </button>
+                          </>
                         )}
                       </div>
-                    )}
-
-                    {/* ACTION BUTTONS */}
-                    <div className="flex gap-2 flex-wrap">
-                      {activeTab === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => openAssignCar(ride)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                          >
-                            Assign Car
-                          </button>
-                          <button
-                            onClick={() => openSplitRide(ride)}
-                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
-                          >
-                            <Split size={16} />
-                            Split Riders
-                          </button>
-                          <button
-                            onClick={() => startEdit(ride)}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => cancelRide(ride.id)}
-                            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                      {activeTab === 'active' && (
-                        <>
-                          {!ride.pickedUpAt && (
-                            <button
-                              onClick={() => startRide(ride.id)}
-                              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm"
-                            >
-                              Mark Picked Up
-                            </button>
-                          )}
-                          <button
-                            onClick={() => completeRide(ride.id)}
-                            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-                          >
-                            Complete Ride
-                          </button>
-                          <button
-                            onClick={() => openSplitRide(ride)}
-                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-1"
-                          >
-                            <Split size={16} />
-                            Split Riders
-                          </button>
-                          <button
-                            onClick={() => startEdit(ride)}
-                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => cancelRide(ride.id)}
-                            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => terminateRide(ride.id)}
-                            className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm"
-                          >
-                            Terminate
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            ))
+                    </>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>
