@@ -412,7 +412,7 @@ const EventCalendar = () => {
               return (
                 <div
                   key={index}
-                  className={`min-h-20 md:min-h-24 border rounded-lg p-1 md:p-2 overflow-hidden ${
+                  className={`min-h-24 md:min-h-28 lg:min-h-32 border rounded-lg p-1 md:p-2 overflow-hidden ${
                     date ? 'bg-white' : 'bg-gray-50'
                   } ${
                     isToday(date) ? 'ring-2 ring-red-500' : ''
@@ -434,22 +434,22 @@ const EventCalendar = () => {
                             <button
                               key={event.id}
                               onClick={() => setSelectedEvent(event)}
-                              className={`w-full text-left px-1 md:px-2 py-1 rounded text-xs text-white ${getEventTypeColor(event.type)} hover:opacity-80 transition overflow-hidden`}
+                              className={`w-full text-left px-1 md:px-2 py-1.5 md:py-1 rounded text-xs md:text-sm text-white ${getEventTypeColor(event.type)} hover:opacity-80 active:opacity-70 transition overflow-hidden touch-manipulation`}
                             >
                               <div className="line-clamp-2 md:truncate font-medium leading-tight mb-0.5">
                                 {event.name}
                               </div>
                               {/* Gender counts on mobile and desktop */}
                               {event.signedUp?.length > 0 && (
-                                <div className="flex items-center gap-1 text-[9px] md:text-xs font-bold flex-wrap">
+                                <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold flex-wrap">
                                   <div className="flex items-center gap-0.5 whitespace-nowrap">
-                                    <div className="w-3 h-3 md:w-4 md:h-4 bg-blue-400 rounded-full flex items-center justify-center text-white text-[7px] md:text-[10px] flex-shrink-0">
+                                    <div className="w-4 h-4 md:w-5 md:h-5 bg-blue-400 rounded-full flex items-center justify-center text-white text-[8px] md:text-[9px] flex-shrink-0">
                                       M
                                     </div>
                                     <span>{males}</span>
                                   </div>
                                   <div className="flex items-center gap-0.5 whitespace-nowrap">
-                                    <div className="w-3 h-3 md:w-4 md:h-4 bg-pink-400 rounded-full flex items-center justify-center text-white text-[7px] md:text-[10px] flex-shrink-0">
+                                    <div className="w-4 h-4 md:w-5 md:h-5 bg-pink-400 rounded-full flex items-center justify-center text-white text-[8px] md:text-[9px] flex-shrink-0">
                                       F
                                     </div>
                                     <span>{females}</span>
@@ -499,8 +499,8 @@ const EventCalendar = () => {
               }
             }}
           >
-            <div 
-              className="bg-white rounded-t-2xl md:rounded-lg shadow-xl w-full max-w-4xl h-[90vh] md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden"
+            <div
+              className="bg-white rounded-t-2xl md:rounded-lg shadow-xl w-full max-w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl h-screen sm:h-auto sm:max-h-[85vh] flex flex-col overflow-hidden modal-safe"
               onClick={(e) => e.stopPropagation()}
             >
               <div className={`px-4 md:px-6 py-3 md:py-4 border-b-4 ${getEventTypeColor(selectedEvent.type)} flex-shrink-0`}>
@@ -516,9 +516,9 @@ const EventCalendar = () => {
                       setSelectedEvent(null);
                       setShowManageSignups(false);
                     }}
-                    className="text-gray-500 hover:text-gray-700 transition flex-shrink-0 p-1"
+                    className="text-gray-500 hover:text-gray-700 active:text-gray-900 transition flex-shrink-0 p-2 min-h-touch touch-manipulation"
                   >
-                    <X size={20} className="md:w-6 md:h-6" />
+                    <X size={24} className="md:w-6 md:h-6" />
                   </button>
                 </div>
               </div>
