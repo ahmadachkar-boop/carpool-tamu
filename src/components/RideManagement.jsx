@@ -126,9 +126,10 @@ const RideManagement = () => {
   const [carStatuses, setCarStatuses] = useState({});
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // NEW: ETA tracking for pending rides with caching
-  const [rideETAs, setRideETAs] = useState({}); // { rideId: { minutes, fastestCar, calculating, timestamp } }
-  const etaCache = useRef({}); // Cache ETA results for 5 minutes
+  // REMOVED: Client-side ETA calculation - now server-side
+  // ETAs are now stored in ride documents and read from Firestore
+  // Fields: estimatedPickupMinutes, fastestCarNumber, etaCalculatedAt
+  const [calculatingETAs, setCalculatingETAs] = useState(false);
   const apiCallCount = useRef(0); // Track API calls
   const lastApiReset = useRef(Date.now());
   const isMounted = useRef(true); // Track component mount status
@@ -201,14 +202,23 @@ const RideManagement = () => {
     return () => clearInterval(interval);
   }, [activeNDR]);
 
-  // NEW: Calculate ETAs for pending rides using real routing
-  // OPTIMIZED: Debounce 45s, limit to top 3 rides, cache for 5 min, rate limiting
-  useEffect(() => {
+  // SERVER-SIDE: ETA Calculation Function
+  // This function calculates ETAs and stores them in Firestore
+  // All clients read ETAs from ride documents instead of calculating
+  const calculateAndStoreETAs = async () => {
     if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0) {
+      setSnackbar({
+        isOpen: true,
+        message: 'No pending rides to calculate ETAs for',
+        type: 'info',
+        onUndo: null
+      });
       return;
     }
 
-    const calculateAllETAs = async () => {
+    setCalculatingETAs(true);
+
+    try {
       // Reset API call counter every hour
       if (Date.now() - lastApiReset.current > API_RESET_INTERVAL_MS) {
         apiCallCount.current = 0;
@@ -231,18 +241,12 @@ const RideManagement = () => {
       const ridesToCalculate = rides.pending.slice(0, MAX_PENDING_RIDES_FOR_ETA);
 
       for (const ride of ridesToCalculate) {
-        // Check if we have cached result
-        const cached = etaCache.current[ride.id];
-        if (cached && Date.now() - cached.timestamp < ETA_CACHE_MS) {
-          newETAs[ride.id] = cached;
-          continue;
-        }
-        // Mark as calculating
-        if (isMounted.current) {
-          setRideETAs(prev => ({
-            ...prev,
-            [ride.id]: { ...prev[ride.id], calculating: true }
-          }));
+        // Skip if ETA was calculated recently (less than 5 minutes ago)
+        if (ride.etaCalculatedAt) {
+          const etaAge = Date.now() - ride.etaCalculatedAt.toMillis();
+          if (etaAge < ETA_CACHE_MS && ride.estimatedPickupMinutes) {
+            continue; // Skip, ETA is still fresh
+          }
         }
 
         try {
@@ -408,8 +412,6 @@ const RideManagement = () => {
             };
 
             newETAs[ride.id] = etaData;
-            // Cache the result
-            etaCache.current[ride.id] = etaData;
           }
         } catch (error) {
           logError('ETA Calculation', error, { rideId: ride.id });
@@ -422,15 +424,34 @@ const RideManagement = () => {
         }
       }
 
-      if (isMounted.current) {
-        setRideETAs(prev => ({ ...prev, ...newETAs }));
+      // SERVER-SIDE: Update ETAs in Firestore instead of component state
+      for (const [rideId, etaData] of Object.entries(newETAs)) {
+        if (!etaData.error && etaData.minutes !== null) {
+          await updateDoc(doc(db, 'rides', rideId), {
+            estimatedPickupMinutes: etaData.minutes,
+            fastestCarNumber: etaData.fastestCar,
+            etaCalculatedAt: Timestamp.now()
+          });
+        }
       }
-    };
 
-    // OPTIMIZATION: Debounce increased to reduce API calls
-    const timer = setTimeout(calculateAllETAs, ETA_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
+      setCalculatingETAs(false);
+      setSnackbar({
+        isOpen: true,
+        message: `ETAs calculated for ${Object.keys(newETAs).length} rides`,
+        type: 'success',
+        onUndo: null
+      });
+    } catch (error) {
+      logError('Calculate and Store ETAs', error);
+      setCalculatingETAs(false);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Error calculating ETAs: ' + error.message
+      });
+    }
+  };
 
   // NEW: Update current time for timer displays
   useEffect(() => {
@@ -1368,6 +1389,28 @@ const RideManagement = () => {
         </div>
       )}
 
+      {/* SERVER-SIDE: Manual ETA Recalculation */}
+      {rides.pending.length > 0 && (
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h3 className="font-bold text-gray-900 text-lg">Estimated Pickup Times</h3>
+              <p className="text-sm text-gray-600">
+                ETAs are stored server-side and persist across all devices and sessions
+              </p>
+            </div>
+            <button
+              onClick={calculateAndStoreETAs}
+              disabled={calculatingETAs}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold flex items-center gap-2 min-h-touch touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Navigation size={16} className={calculatingETAs ? 'animate-spin' : ''} />
+              {calculatingETAs ? 'Calculating...' : 'Recalculate ETAs'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* NEW: Car Status Board */}
       {availableCars > 0 && (
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
@@ -1651,27 +1694,22 @@ const RideManagement = () => {
                               )}
                             </div>
                             
-                            {/* ETA to pickup */}
-                            {rideETAs[ride.id] && (
-                              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-                                rideETAs[ride.id].calculating 
-                                  ? 'bg-gray-100 text-gray-600'
-                                  : 'bg-green-100 text-green-800'
-                              }`}>
+                            {/* ETA to pickup - SERVER-SIDE: Read from Firestore */}
+                            {ride.estimatedPickupMinutes && (
+                              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-800">
                                 <Navigation size={16} />
-                                {rideETAs[ride.id].calculating ? (
-                                  <span className="text-xs font-bold">Calculating ETA...</span>
-                                ) : rideETAs[ride.id].error ? (
-                                  <span className="text-xs font-bold">ETA unavailable</span>
-                                ) : (
-                                  <>
-                                    <span className="text-xs font-bold">
-                                      ETA: ~{rideETAs[ride.id].minutes} min
-                                    </span>
-                                    <span className="text-xs bg-green-200 px-1.5 py-0.5 rounded">
-                                      Car {rideETAs[ride.id].fastestCar}
-                                    </span>
-                                  </>
+                                <span className="text-xs font-bold">
+                                  ETA: ~{ride.estimatedPickupMinutes} min
+                                </span>
+                                {ride.fastestCarNumber && (
+                                  <span className="text-xs bg-green-200 px-1.5 py-0.5 rounded">
+                                    Car {ride.fastestCarNumber}
+                                  </span>
+                                )}
+                                {ride.etaCalculatedAt && (
+                                  <span className="text-xs text-gray-500">
+                                    ({formatTime(ride.etaCalculatedAt.toDate())})
+                                  </span>
                                 )}
                               </div>
                             )}
