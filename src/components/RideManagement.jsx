@@ -952,23 +952,36 @@ const RideManagement = () => {
           const activeRide = activeRideDoc.data();
 
           // Combine the rides by updating the active ride's dropoffs array
-          const currentDropoffs = activeRide.dropoffs || [activeRide.dropoff];
-          const pendingDropoffs = pendingRide.dropoffs || [pendingRide.dropoff];
+          // Filter out undefined values
+          const currentDropoffs = activeRide.dropoffs
+            ? activeRide.dropoffs.filter(d => d)
+            : (activeRide.dropoff ? [activeRide.dropoff] : []);
+
+          const pendingDropoffs = pendingRide.dropoffs
+            ? pendingRide.dropoffs.filter(d => d)
+            : (pendingRide.dropoff ? [pendingRide.dropoff] : []);
 
           // Add pending ride's pickup and dropoffs to the active ride
           // We'll add them at the end of the route
-          const updatedDropoffs = [...currentDropoffs, ...pendingDropoffs];
+          const updatedDropoffs = [...currentDropoffs, ...pendingDropoffs].filter(d => d);
 
-          // Update active ride with new dropoffs and updated rider count
-          await updateDoc(doc(db, 'rides', activeRideId), {
+          // Build update object with only defined values
+          const updateData = {
             dropoffs: updatedDropoffs,
             riders: (activeRide.riders || 1) + (pendingRide.riders || 1),
-            // Store info about combined rides for reference
-            combinedRides: [...(activeRide.combinedRides || [activeRide.id]), pendingRideId],
-            patronNotes: activeRide.patronNotes
-              ? `${activeRide.patronNotes} | Combined with ${pendingRide.patronName} (${pendingRide.phone})`
-              : `Combined with ${pendingRide.patronName} (${pendingRide.phone})`
-          });
+            combinedRides: [...(activeRide.combinedRides || []), pendingRideId]
+          };
+
+          // Only add patronNotes if we have the required fields
+          if (pendingRide.patronName && pendingRide.phone) {
+            const combinedNote = `Combined with ${pendingRide.patronName} (${pendingRide.phone})`;
+            updateData.patronNotes = activeRide.patronNotes
+              ? `${activeRide.patronNotes} | ${combinedNote}`
+              : combinedNote;
+          }
+
+          // Update active ride with new dropoffs and updated rider count
+          await updateDoc(doc(db, 'rides', activeRideId), updateData);
 
           // Mark pending ride as completed/combined
           await updateDoc(doc(db, 'rides', pendingRideId), {
