@@ -509,8 +509,74 @@ const Members = () => {
         </div>
       </div>
 
-      {/* Members Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-3">
+        {filteredMembers.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+            No members found
+          </div>
+        ) : (
+          filteredMembers.map((member) => (
+            <div key={member.id} className="bg-white rounded-lg shadow border border-gray-200 p-4 space-y-3">
+              {/* Header with name and actions */}
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold text-gray-900">{member.name}</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">{member.gender} • {member.pronouns}</p>
+                </div>
+                <div className="flex gap-2 ml-3">
+                  <button
+                    onClick={() => startEdit(member)}
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg active:bg-blue-100 touch-manipulation"
+                  >
+                    <Edit2 size={20} />
+                  </button>
+                  <button
+                    onClick={() => deleteMember(member.id, member.name)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg active:bg-red-100 touch-manipulation"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Role badge */}
+              <div>
+                <span className={`px-3 py-1 inline-flex text-xs font-semibold rounded-full ${getRoleBadgeColor(member.role)}`}>
+                  {member.role}
+                </span>
+              </div>
+
+              {/* Contact info */}
+              <div className="space-y-1 text-sm">
+                <div className="flex items-center gap-2 text-gray-700">
+                  <span className="font-medium">Email:</span>
+                  <span className="truncate">{member.email}</span>
+                </div>
+                <div className="flex items-center gap-2 text-gray-700">
+                  <span className="font-medium">Phone:</span>
+                  <span>{member.phone}</span>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="flex gap-4 pt-2 border-t border-gray-200">
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 uppercase">Points</p>
+                  <p className="text-lg font-bold text-[#79F200]">{member.points || 0}</p>
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 uppercase">Nights</p>
+                  <p className="text-lg font-bold text-gray-900">{member.nightsWorked || 0}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b">
@@ -567,13 +633,13 @@ const Members = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         onClick={() => startEdit(member)}
-                        className="text-blue-600 hover:text-blue-900 mr-3"
+                        className="text-blue-600 hover:text-blue-900 mr-3 touch-manipulation"
                       >
                         <Edit2 size={18} />
                       </button>
                       <button
                         onClick={() => deleteMember(member.id, member.name)}
-                        className="text-red-600 hover:text-red-900"
+                        className="text-red-600 hover:text-red-900 touch-manipulation"
                       >
                         <Trash2 size={18} />
                       </button>

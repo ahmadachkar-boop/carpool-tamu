@@ -249,14 +249,14 @@ const Dashboard = () => {
           </div>
           <h3 className="text-xl font-bold text-gray-900">Quick Links</h3>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
           {quickLinks.map((link, index) => (
             <a
               key={index}
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`group bg-gradient-to-br ${link.bgColor} rounded-xl p-4 hover:shadow-lg transform hover:scale-105 transition-all border border-gray-200 cursor-pointer`}
+              className={`group bg-gradient-to-br ${link.bgColor} rounded-xl p-4 hover:shadow-lg transform hover:scale-105 transition-all border border-gray-200 cursor-pointer touch-manipulation min-h-touch`}
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className={`w-10 h-10 bg-gradient-to-br ${link.color} rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform`}>
@@ -317,21 +317,21 @@ const Dashboard = () => {
 
       {/* Stats Grid */}
       {activeNDR && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-6">
           {statCards.map((stat, index) => (
             <div
               key={index}
-              className={`bg-gradient-to-br ${stat.bgColor} rounded-2xl p-6 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all border border-gray-200`}
+              className={`bg-gradient-to-br ${stat.bgColor} rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all border border-gray-200`}
             >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center shadow-lg`}>
-                  <stat.icon className="text-white" size={24} />
+              <div className="flex items-center justify-between mb-3 md:mb-4">
+                <div className={`w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center shadow-lg`}>
+                  <stat.icon className="text-white" size={20} />
                 </div>
-                <span className={`text-3xl md:text-4xl font-bold ${stat.textColor}`}>
+                <span className={`text-2xl md:text-3xl lg:text-4xl font-bold ${stat.textColor}`}>
                   {stat.value}
                 </span>
               </div>
-              <h3 className="text-gray-900 font-semibold text-base md:text-lg mb-1">{stat.title}</h3>
+              <h3 className="text-gray-900 font-semibold text-sm md:text-base lg:text-lg mb-1">{stat.title}</h3>
               <p className="text-gray-600 text-xs md:text-sm">{stat.description}</p>
             </div>
           ))}
