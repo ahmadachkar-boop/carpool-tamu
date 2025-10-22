@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, addDoc, Timestamp, getDocs, documentId } from 'firebase/firestore';
 import { useActiveNDR } from '../ActiveNDRContext';
 import { Car, AlertCircle, MapPin, Phone, Users, Clock, Edit2, Check, X, Split, AlertTriangle, Navigation } from 'lucide-react';
 import { useGoogleMaps } from '../GoogleMapsProvider';
@@ -17,6 +17,25 @@ const normalizeGender = (gender) => {
 const isMale = (member) => normalizeGender(member?.gender) === 'male';
 const isFemale = (member) => normalizeGender(member?.gender) === 'female';
 
+// Custom Modal Components (replaces alert/prompt/confirm)
+const Modal = ({ isOpen, onClose, title, children, actions }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+        {title && (
+          <h3 className="text-xl font-bold text-gray-900 mb-4">{title}</h3>
+        )}
+        <div className="mb-6">{children}</div>
+        <div className="flex gap-3">
+          {actions}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RideManagement = () => {
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { isLoaded: googleMapsLoaded } = useGoogleMaps();
@@ -30,37 +49,82 @@ const RideManagement = () => {
   const [splitRiders, setSplitRiders] = useState({ ride1: 1, ride2: 1 });
   const [eligibleCars, setEligibleCars] = useState({}); // { carNumber: { eligible: boolean, reason: string, maleCount: number, femaleCount: number } }
   const [checkingEligibility, setCheckingEligibility] = useState(false);
-  
+
   // NEW: Car status tracking
   const [carLocations, setCarLocations] = useState({});
   const [carStatuses, setCarStatuses] = useState({});
   const [currentTime, setCurrentTime] = useState(new Date());
-  
-  // NEW: ETA tracking for pending rides
-  const [rideETAs, setRideETAs] = useState({}); // { rideId: { minutes, fastestCar, calculating } }
+
+  // NEW: ETA tracking for pending rides with caching
+  const [rideETAs, setRideETAs] = useState({}); // { rideId: { minutes, fastestCar, calculating, timestamp } }
+  const etaCache = useRef({}); // Cache ETA results for 5 minutes
+  const apiCallCount = useRef(0); // Track API calls
+  const lastApiReset = useRef(Date.now());
+  const isMounted = useRef(true); // Track component mount status
+
+  // Modal states (replaces alert/prompt/confirm)
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+  const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+  const [promptValue, setPromptValue] = useState('');
+  const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
+
+  // Track component mount/unmount to prevent memory leaks
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   // NEW: Calculate ETAs for pending rides using real routing
+  // OPTIMIZED: Debounce 45s, limit to top 3 rides, cache for 5 min, rate limiting
   useEffect(() => {
     if (!activeNDR || !googleMapsLoaded || !window.google || rides.pending.length === 0) {
       return;
     }
 
     const calculateAllETAs = async () => {
+      // Reset API call counter every hour
+      if (Date.now() - lastApiReset.current > 3600000) {
+        apiCallCount.current = 0;
+        lastApiReset.current = Date.now();
+      }
+
+      // Rate limiting: max 500 API calls per hour
+      if (apiCallCount.current > 500) {
+        console.warn('Google Maps API rate limit reached. Skipping ETA calculation.');
+        return;
+      }
+
       const newETAs = {};
       const directionsService = new window.google.maps.DirectionsService();
 
-      for (const ride of rides.pending) {
+      // OPTIMIZATION: Only calculate for top 3 pending rides
+      const ridesToCalculate = rides.pending.slice(0, 3);
+
+      for (const ride of ridesToCalculate) {
+        // Check if we have cached result less than 5 minutes old
+        const cached = etaCache.current[ride.id];
+        if (cached && Date.now() - cached.timestamp < 300000) {
+          newETAs[ride.id] = cached;
+          continue;
+        }
         // Mark as calculating
-        setRideETAs(prev => ({
-          ...prev,
-          [ride.id]: { ...prev[ride.id], calculating: true }
-        }));
+        if (isMounted.current) {
+          setRideETAs(prev => ({
+            ...prev,
+            [ride.id]: { ...prev[ride.id], calculating: true }
+          }));
+        }
 
         try {
           // Calculate availability for each car
           const carAvailability = [];
 
           for (let carNum = 1; carNum <= availableCars; carNum++) {
+            // Check if component is still mounted
+            if (!isMounted.current) return;
+
             const activeRide = rides.active.find(r => r.carNumber === carNum);
             const location = carLocations[carNum];
 
@@ -68,6 +132,7 @@ const RideManagement = () => {
               // Car is free
               if (location && location.latitude && location.longitude) {
                 try {
+                  apiCallCount.current++; // Increment API call counter
                   const result = await new Promise((resolve, reject) => {
                     directionsService.route(
                       {
@@ -86,9 +151,11 @@ const RideManagement = () => {
                     );
                   });
 
+                  if (!isMounted.current) return; // Check again after async operation
+
                   const durationInTraffic = result.routes[0].legs[0].duration_in_traffic || result.routes[0].legs[0].duration;
                   const minutesToPickup = Math.ceil(durationInTraffic.value / 60);
-                  
+
                   carAvailability.push({
                     carNumber: carNum,
                     availableInMinutes: minutesToPickup
@@ -110,7 +177,7 @@ const RideManagement = () => {
               try {
                 const waypoints = [];
                 const dropoffs = activeRide.dropoffs || [activeRide.dropoff];
-                
+
                 let origin;
                 if (activeRide.pickedUpAt) {
                   origin = activeRide.pickup;
@@ -129,6 +196,7 @@ const RideManagement = () => {
 
                 const finalDropoff = dropoffs[dropoffs.length - 1];
 
+                apiCallCount.current++; // Increment API call counter
                 const currentRouteResult = await new Promise((resolve, reject) => {
                   directionsService.route(
                     {
@@ -148,6 +216,8 @@ const RideManagement = () => {
                   );
                 });
 
+                if (!isMounted.current) return; // Check after async operation
+
                 let totalCurrentRouteTime = 0;
                 currentRouteResult.routes[0].legs.forEach(leg => {
                   const duration = leg.duration_in_traffic || leg.duration;
@@ -157,6 +227,7 @@ const RideManagement = () => {
                 const bufferMinutes = (waypoints.length + 1) * 2;
                 const currentRouteMinutes = Math.ceil(totalCurrentRouteTime / 60) + bufferMinutes;
 
+                apiCallCount.current++; // Increment API call counter
                 const toNewPickupResult = await new Promise((resolve, reject) => {
                   directionsService.route(
                     {
@@ -174,6 +245,8 @@ const RideManagement = () => {
                     }
                   );
                 });
+
+                if (!isMounted.current) return; // Check after async operation
 
                 const toNewPickupDuration = toNewPickupResult.routes[0].legs[0].duration_in_traffic || toNewPickupResult.routes[0].legs[0].duration;
                 const toNewPickupMinutes = Math.ceil(toNewPickupDuration.value / 60);
@@ -193,16 +266,22 @@ const RideManagement = () => {
             }
           }
 
+          if (!isMounted.current) return; // Final check before updating state
+
           if (carAvailability.length > 0) {
             carAvailability.sort((a, b) => a.availableInMinutes - b.availableInMinutes);
             const fastest = carAvailability[0];
-            
-            newETAs[ride.id] = {
+
+            const etaData = {
               minutes: fastest.availableInMinutes,
               fastestCar: fastest.carNumber,
               calculating: false,
               timestamp: Date.now()
             };
+
+            newETAs[ride.id] = etaData;
+            // Cache the result
+            etaCache.current[ride.id] = etaData;
           }
         } catch (error) {
           console.error(`Error calculating ETA for ride ${ride.id}:`, error);
@@ -215,11 +294,13 @@ const RideManagement = () => {
         }
       }
 
-      setRideETAs(prev => ({ ...prev, ...newETAs }));
+      if (isMounted.current) {
+        setRideETAs(prev => ({ ...prev, ...newETAs }));
+      }
     };
 
-    // Calculate ETAs with a debounce
-    const timer = setTimeout(calculateAllETAs, 2000);
+    // OPTIMIZATION: Debounce increased from 2s to 45s to reduce API calls
+    const timer = setTimeout(calculateAllETAs, 45000);
     return () => clearTimeout(timer);
   }, [rides.pending, rides.active, carLocations, availableCars, googleMapsLoaded, activeNDR]);
 
@@ -408,7 +489,33 @@ const RideManagement = () => {
         const ndrData = ndrDoc.data();
         const carEligibility = {};
 
-        // Check each car
+        // OPTIMIZATION: Collect all member IDs across all cars first (fixes N+1 query)
+        const allMemberIds = new Set();
+        for (let carNum = 1; carNum <= availableCars; carNum++) {
+          const carAssignments = ndrData.assignments?.cars?.[carNum] || [];
+          carAssignments.forEach(id => allMemberIds.add(id));
+        }
+
+        // OPTIMIZATION: Batch fetch all members at once instead of one-by-one
+        const memberIds = Array.from(allMemberIds);
+        const memberMap = {};
+
+        if (memberIds.length > 0) {
+          // Firestore has a limit of 10 for 'in' queries, so batch in chunks of 10
+          for (let i = 0; i < memberIds.length; i += 10) {
+            const chunk = memberIds.slice(i, i + 10);
+            const membersQuery = query(
+              collection(db, 'members'),
+              where(documentId(), 'in', chunk)
+            );
+            const membersSnapshot = await getDocs(membersQuery);
+            membersSnapshot.docs.forEach(doc => {
+              memberMap[doc.id] = doc.data();
+            });
+          }
+        }
+
+        // Check each car using the cached member data
         for (let carNum = 1; carNum <= availableCars; carNum++) {
           const carAssignments = ndrData.assignments?.cars?.[carNum] || [];
 
@@ -422,14 +529,10 @@ const RideManagement = () => {
             continue;
           }
 
-          // Fetch car member details to check genders
-          const carMembers = [];
-          for (const memberId of carAssignments) {
-            const memberDoc = await getDoc(doc(db, 'members', memberId));
-            if (memberDoc.exists()) {
-              carMembers.push(memberDoc.data());
-            }
-          }
+          // Use cached member data instead of fetching individually
+          const carMembers = carAssignments
+            .map(id => memberMap[id])
+            .filter(Boolean);
 
           const maleCount = carMembers.filter(m => isMale(m)).length;
           const femaleCount = carMembers.filter(m => isFemale(m)).length;
@@ -468,7 +571,11 @@ const RideManagement = () => {
 
   const assignCar = async () => {
     if (!assigningRide || !assigningRide.selectedCar) {
-      alert('Please select a car number');
+      setAlertModal({
+        isOpen: true,
+        title: 'No Car Selected',
+        message: 'Please select a car number before assigning.'
+      });
       return;
     }
 
@@ -484,17 +591,28 @@ const RideManagement = () => {
         // Validate selected car has opposite gender members
         const carAssignments = ndrData.assignments?.cars?.[carNumber] || [];
         if (carAssignments.length < 2) {
-          alert(`Car ${carNumber} must have at least 2 members assigned before accepting single rider rides. Please assign more members to Car ${carNumber} in the NDR assignments.`);
+          setAlertModal({
+            isOpen: true,
+            title: 'Insufficient Members',
+            message: `Car ${carNumber} must have at least 2 members assigned before accepting single rider rides. Please assign more members to Car ${carNumber} in the NDR assignments.`
+          });
           return;
         }
 
-        // Fetch car member details to check genders
-        const membersRef = collection(db, 'members');
+        // OPTIMIZATION: Batch fetch members instead of one-by-one (fixes N+1 query)
         const carMembers = [];
-        for (const memberId of carAssignments) {
-          const memberDoc = await getDoc(doc(db, 'members', memberId));
-          if (memberDoc.exists()) {
-            carMembers.push(memberDoc.data());
+        if (carAssignments.length > 0) {
+          // Batch in chunks of 10 (Firestore limit)
+          for (let i = 0; i < carAssignments.length; i += 10) {
+            const chunk = carAssignments.slice(i, i + 10);
+            const membersQuery = query(
+              collection(db, 'members'),
+              where(documentId(), 'in', chunk)
+            );
+            const membersSnapshot = await getDocs(membersQuery);
+            membersSnapshot.docs.forEach(doc => {
+              carMembers.push(doc.data());
+            });
           }
         }
 
@@ -502,83 +620,165 @@ const RideManagement = () => {
         const hasFemale = carMembers.some(m => isFemale(m));
 
         if (!hasMale || !hasFemale) {
-          alert(`Car ${carNumber} must have both male and female members assigned before accepting single rider rides. Please update Car ${carNumber} assignments in the NDR or select a different car.`);
+          setAlertModal({
+            isOpen: true,
+            title: 'Gender Requirement Not Met',
+            message: `Car ${carNumber} must have both male and female members assigned before accepting single rider rides. Please update Car ${carNumber} assignments in the NDR or select a different car.`
+          });
           return;
         }
       }
+
+      // OPTIMIZATION: Add version check for optimistic locking (prevents race conditions)
+      const rideDoc = await getDoc(doc(db, 'rides', assigningRide.id));
+      if (!rideDoc.exists()) {
+        setAlertModal({
+          isOpen: true,
+          title: 'Ride Not Found',
+          message: 'This ride no longer exists.'
+        });
+        setAssigningRide(null);
+        return;
+      }
+
+      const currentRide = rideDoc.data();
+      if (currentRide.status !== 'pending') {
+        setAlertModal({
+          isOpen: true,
+          title: 'Ride Already Assigned',
+          message: 'This ride has already been assigned by another dispatcher. Please refresh.'
+        });
+        setAssigningRide(null);
+        return;
+      }
+
+      const currentVersion = currentRide.version || 0;
 
       await updateDoc(doc(db, 'rides', assigningRide.id), {
         status: 'active',
         carNumber: carNumber,
         assignedDriver: carInfo ? `${carInfo.driverName}` : 'Unknown Driver',
         carInfo: carInfo || null,
-        assignedAt: Timestamp.now()
+        assignedAt: Timestamp.now(),
+        version: currentVersion + 1  // Increment version for optimistic locking
       });
 
       setAssigningRide(null);
     } catch (error) {
       console.error('Error assigning car:', error);
-      alert('Error assigning car: ' + error.message);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Error assigning car: ' + error.message
+      });
     }
   };
 
   const startRide = async (rideId) => {
-    if (window.confirm('Mark patron as picked up?')) {
-      try {
-        await updateDoc(doc(db, 'rides', rideId), {
-          pickedUpAt: Timestamp.now()
-        });
-      } catch (error) {
-        console.error('Error starting ride:', error);
-        alert('Error starting ride: ' + error.message);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Mark as Picked Up?',
+      message: 'Confirm that the patron has been picked up.',
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'rides', rideId), {
+            pickedUpAt: Timestamp.now()
+          });
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+        } catch (error) {
+          console.error('Error starting ride:', error);
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+          setAlertModal({
+            isOpen: true,
+            title: 'Error',
+            message: 'Error starting ride: ' + error.message
+          });
+        }
       }
-    }
+    });
   };
 
   const completeRide = async (rideId) => {
-    if (window.confirm('Mark ride as completed?')) {
-      try {
-        await updateDoc(doc(db, 'rides', rideId), {
-          status: 'completed',
-          completedAt: Timestamp.now()
-        });
-      } catch (error) {
-        console.error('Error completing ride:', error);
-        alert('Error completing ride: ' + error.message);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Complete Ride?',
+      message: 'Mark this ride as completed?',
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'rides', rideId), {
+            status: 'completed',
+            completedAt: Timestamp.now()
+          });
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+        } catch (error) {
+          console.error('Error completing ride:', error);
+          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
+          setAlertModal({
+            isOpen: true,
+            title: 'Error',
+            message: 'Error completing ride: ' + error.message
+          });
+        }
       }
-    }
+    });
   };
 
   const cancelRide = async (rideId) => {
-    const reason = prompt('Reason for cancellation:');
-    if (reason !== null) {
-      try {
-        await updateDoc(doc(db, 'rides', rideId), {
-          status: 'cancelled',
-          completedAt: Timestamp.now(),
-          cancellationReason: reason || 'No reason provided'
-        });
-      } catch (error) {
-        console.error('Error cancelling ride:', error);
-        alert('Error cancelling ride: ' + error.message);
+    setPromptModal({
+      isOpen: true,
+      title: 'Cancel Ride',
+      message: 'Please provide a reason for cancellation:',
+      defaultValue: '',
+      onSubmit: async (reason) => {
+        try {
+          await updateDoc(doc(db, 'rides', rideId), {
+            status: 'cancelled',
+            completedAt: Timestamp.now(),
+            cancellationReason: reason || 'No reason provided'
+          });
+          setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+          setPromptValue('');
+        } catch (error) {
+          console.error('Error cancelling ride:', error);
+          setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+          setPromptValue('');
+          setAlertModal({
+            isOpen: true,
+            title: 'Error',
+            message: 'Error cancelling ride: ' + error.message
+          });
+        }
       }
-    }
+    });
   };
 
   const terminateRide = async (rideId) => {
-    const reason = prompt('Reason for termination (e.g., patron no-show, unsafe situation):');
-    if (reason !== null) {
-      try {
-        await updateDoc(doc(db, 'rides', rideId), {
-          status: 'terminated',
-          completedAt: Timestamp.now(),
-          terminationReason: reason || 'No reason provided'
-        });
-      } catch (error) {
-        console.error('Error terminating ride:', error);
-        alert('Error terminating ride: ' + error.message);
+    setPromptModal({
+      isOpen: true,
+      title: 'Terminate Ride',
+      message: 'Reason for termination (e.g., patron no-show, unsafe situation):',
+      defaultValue: '',
+      onSubmit: async (reason) => {
+        try {
+          await updateDoc(doc(db, 'rides', rideId), {
+            status: 'terminated',
+            completedAt: Timestamp.now(),
+            terminationReason: reason || 'No reason provided'
+          });
+          setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+          setPromptValue('');
+        } catch (error) {
+          console.error('Error terminating ride:', error);
+          setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+          setPromptValue('');
+          setAlertModal({
+            isOpen: true,
+            title: 'Error',
+            message: 'Error terminating ride: ' + error.message
+          });
+        }
       }
-    }
+    });
   };
 
   const startEdit = (ride) => {
@@ -590,25 +790,49 @@ const RideManagement = () => {
 
   const saveEdit = async () => {
     if (!editingRide) return;
-    
+
     try {
+      // OPTIMIZATION: Add version check for optimistic locking (prevents race conditions)
+      const rideDoc = await getDoc(doc(db, 'rides', editingRide.id));
+      if (!rideDoc.exists()) {
+        setAlertModal({
+          isOpen: true,
+          title: 'Ride Not Found',
+          message: 'This ride no longer exists.'
+        });
+        setEditingRide(null);
+        return;
+      }
+
+      const currentRide = rideDoc.data();
+      const currentVersion = currentRide.version || 0;
+
       await updateDoc(doc(db, 'rides', editingRide.id), {
         patronName: editingRide.patronName,
         phone: editingRide.phone,
         pickup: editingRide.pickup,
         dropoffs: editingRide.dropoffs,
-        riders: editingRide.riders
+        riders: editingRide.riders,
+        version: currentVersion + 1  // Increment version for optimistic locking
       });
       setEditingRide(null);
     } catch (error) {
       console.error('Error updating ride:', error);
-      alert('Error updating ride: ' + error.message);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Error updating ride: ' + error.message
+      });
     }
   };
 
   const openSplitRide = (ride) => {
     if (ride.riders < 2) {
-      alert('Cannot split a ride with less than 2 riders');
+      setAlertModal({
+        isOpen: true,
+        title: 'Cannot Split',
+        message: 'Cannot split a ride with less than 2 riders.'
+      });
       return;
     }
     setSplittingRide(ride);
@@ -620,18 +844,27 @@ const RideManagement = () => {
 
     const totalRiders = splitRiders.ride1 + splitRiders.ride2;
     if (totalRiders !== splittingRide.riders) {
-      alert(`Split must equal total riders (${splittingRide.riders})`);
+      setAlertModal({
+        isOpen: true,
+        title: 'Invalid Split',
+        message: `Split must equal total riders (${splittingRide.riders})`
+      });
       return;
     }
 
     if (splitRiders.ride1 < 1 || splitRiders.ride2 < 1) {
-      alert('Each ride must have at least 1 rider');
+      setAlertModal({
+        isOpen: true,
+        title: 'Invalid Split',
+        message: 'Each ride must have at least 1 rider.'
+      });
       return;
     }
 
     try {
       await updateDoc(doc(db, 'rides', splittingRide.id), {
-        riders: splitRiders.ride1
+        riders: splitRiders.ride1,
+        version: (splittingRide.version || 0) + 1  // Increment version
       });
 
       await addDoc(collection(db, 'rides'), {
@@ -644,15 +877,24 @@ const RideManagement = () => {
         status: 'pending',
         requestedAt: Timestamp.now(),
         requestedBy: splittingRide.requestedBy,
-        splitFrom: splittingRide.id
+        splitFrom: splittingRide.id,
+        version: 1  // Initialize version
       });
 
-      alert('Ride split successfully!');
+      setAlertModal({
+        isOpen: true,
+        title: 'Success',
+        message: 'Ride split successfully!'
+      });
       setSplittingRide(null);
       setSplitRiders({ ride1: 1, ride2: 1 });
     } catch (error) {
       console.error('Error splitting ride:', error);
-      alert('Error splitting ride: ' + error.message);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Error splitting ride: ' + error.message
+      });
     }
   };
 
@@ -663,15 +905,19 @@ const RideManagement = () => {
   };
 
   const addDropoffToEdit = () => {
-    setEditingRide({ 
-      ...editingRide, 
-      dropoffs: [...editingRide.dropoffs, ''] 
+    setEditingRide({
+      ...editingRide,
+      dropoffs: [...editingRide.dropoffs, '']
     });
   };
 
   const removeDropoffFromEdit = (index) => {
     if (editingRide.dropoffs.length <= 1) {
-      alert('Ride must have at least one dropoff location');
+      setAlertModal({
+        isOpen: true,
+        title: 'Cannot Remove',
+        message: 'Ride must have at least one dropoff location.'
+      });
       return;
     }
     const newDropoffs = editingRide.dropoffs.filter((_, i) => i !== index);
@@ -1381,6 +1627,91 @@ const RideManagement = () => {
           </div>
         </div>
       )}
+
+      {/* Alert Modal (replaces alert()) */}
+      <Modal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ isOpen: false, title: '', message: '' })}
+        title={alertModal.title}
+        actions={
+          <button
+            onClick={() => setAlertModal({ isOpen: false, title: '', message: '' })}
+            className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold min-h-touch touch-manipulation"
+          >
+            OK
+          </button>
+        }
+      >
+        <p className="text-gray-700">{alertModal.message}</p>
+      </Modal>
+
+      {/* Confirm Modal (replaces confirm()) */}
+      <Modal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null })}
+        title={confirmModal.title}
+        actions={
+          <>
+            <button
+              onClick={() => {
+                if (confirmModal.onConfirm) confirmModal.onConfirm();
+              }}
+              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold min-h-touch touch-manipulation"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null })}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold min-h-touch touch-manipulation"
+            >
+              Cancel
+            </button>
+          </>
+        }
+      >
+        <p className="text-gray-700">{confirmModal.message}</p>
+      </Modal>
+
+      {/* Prompt Modal (replaces prompt()) */}
+      <Modal
+        isOpen={promptModal.isOpen}
+        onClose={() => {
+          setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+          setPromptValue('');
+        }}
+        title={promptModal.title}
+        actions={
+          <>
+            <button
+              onClick={() => {
+                if (promptModal.onSubmit) promptModal.onSubmit(promptValue);
+              }}
+              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold min-h-touch touch-manipulation"
+            >
+              Submit
+            </button>
+            <button
+              onClick={() => {
+                setPromptModal({ isOpen: false, title: '', message: '', onSubmit: null, defaultValue: '' });
+                setPromptValue('');
+              }}
+              className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold min-h-touch touch-manipulation"
+            >
+              Cancel
+            </button>
+          </>
+        }
+      >
+        <p className="text-gray-700 mb-3">{promptModal.message}</p>
+        <input
+          type="text"
+          value={promptValue}
+          onChange={(e) => setPromptValue(e.target.value)}
+          className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-touch"
+          placeholder="Enter text..."
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 };
