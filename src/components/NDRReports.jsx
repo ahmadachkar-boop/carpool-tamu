@@ -4,6 +4,18 @@ import { collection, query, onSnapshot, doc, getDoc, updateDoc, orderBy, Timesta
 import { useAuth } from '../AuthContext';
 import { Play, Printer, FileText, Users, Car, ClipboardList, Archive, RotateCcw, GripVertical, Clock, AlertTriangle, Save, CheckCircle } from 'lucide-react';
 
+// Helper function to normalize and check gender
+const normalizeGender = (gender) => {
+  if (!gender) return null;
+  const normalized = gender.toLowerCase().trim();
+  if (['male', 'm', 'man'].includes(normalized)) return 'male';
+  if (['female', 'f', 'woman'].includes(normalized)) return 'female';
+  return null;
+};
+
+const isMale = (member) => normalizeGender(member?.gender) === 'male';
+const isFemale = (member) => normalizeGender(member?.gender) === 'female';
+
 const NDRReports = () => {
   const [ndrs, setNdrs] = useState([]);
   const [selectedNdr, setSelectedNdr] = useState(null);
@@ -798,20 +810,13 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
     setDraggedMember(null);
   };
 
-  const validateCar1 = (carMembers, newMemberId) => {
+  const validateCarGenders = (carMembers, newMemberId) => {
     const getMemberById = (id) => members.find(m => m.id === id);
     const allMembers = [...carMembers, newMemberId].map(id => getMemberById(id)).filter(Boolean);
-    
-    const hasMale = allMembers.some(m => {
-      const gender = m.gender?.toLowerCase();
-      return (gender === 'male' || gender === 'm' || gender === 'man');
-    });
-    
-    const hasFemale = allMembers.some(m => {
-      const gender = m.gender?.toLowerCase();
-      return (gender === 'female' || gender === 'f' || gender === 'woman');
-    });
-    
+
+    const hasMale = allMembers.some(m => isMale(m));
+    const hasFemale = allMembers.some(m => isFemale(m));
+
     return { hasMale, hasFemale };
   };
 
@@ -853,7 +858,7 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
 
       // Validate Car 1 requirements - only check when there will be 2+ people
       if (carNum === 1 && newCarMembers.length >= 2) {
-        const validation = validateCar1(currentCar, draggedMember.id);
+        const validation = validateCarGenders(currentCar, draggedMember.id);
 
         if (!validation.hasMale || !validation.hasFemale) {
           const message = !validation.hasMale
@@ -901,11 +906,31 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
   const removeMember = (role, memberId, carNum = null) => {
     if (carNum) {
       const currentCar = assignments.cars[carNum] || [];
+      const updatedCar = currentCar.filter(id => id !== memberId);
+
+      // Validate Car 1 after removal (if 2+ members remain)
+      if (carNum === 1 && updatedCar.length >= 2) {
+        const remainingMembers = updatedCar.map(id => members.find(m => m.id === id)).filter(Boolean);
+        const hasMale = remainingMembers.some(m => isMale(m));
+        const hasFemale = remainingMembers.some(m => isFemale(m));
+
+        if (!hasMale || !hasFemale) {
+          const memberName = members.find(m => m.id === memberId)?.name || 'this member';
+          if (!window.confirm(
+            `Warning: Removing ${memberName} will leave Car 1 without opposite gender members.\n\n` +
+            `Car 1 requires both male and female members when 2+ people are assigned.\n\n` +
+            `Continue with removal?`
+          )) {
+            return; // Cancel removal
+          }
+        }
+      }
+
       setAssignments({
         ...assignments,
         cars: {
           ...assignments.cars,
-          [carNum]: currentCar.filter(id => id !== memberId)
+          [carNum]: updatedCar
         }
       });
       return;
@@ -949,14 +974,8 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
 
   // Check Car 1 compliance
   const car1Members = (assignments.cars[1] || []).map(id => getMemberById(id)).filter(Boolean);
-  const car1HasMale = car1Members.some(m => {
-    const gender = m.gender?.toLowerCase();
-    return (gender === 'male' || gender === 'm' || gender === 'man');
-  });
-  const car1HasFemale = car1Members.some(m => {
-    const gender = m.gender?.toLowerCase();
-    return (gender === 'female' || gender === 'f' || gender === 'woman');
-  });
+  const car1HasMale = car1Members.some(m => isMale(m));
+  const car1HasFemale = car1Members.some(m => isFemale(m));
   const car1Compliant = car1Members.length < 2 || (car1HasMale && car1HasFemale);
 
   return (
@@ -1096,38 +1115,41 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
         {Array.from({ length: availableCars }, (_, i) => i + 1).map(carNum => {
           const isCarOne = carNum === 1;
           const carMembers = (assignments.cars[carNum] || []).map(id => getMemberById(id)).filter(Boolean);
-          const hasMale = carMembers.some(m => {
-            const gender = m.gender?.toLowerCase();
-            return (gender === 'male' || gender === 'm' || gender === 'man');
-          });
-          const hasFemale = carMembers.some(m => {
-            const gender = m.gender?.toLowerCase();
-            return (gender === 'female' || gender === 'f' || gender === 'woman');
-          });
-          const isCompliant = carMembers.length === 0 || (hasMale && hasFemale);
-          
+          const hasMale = carMembers.some(m => isMale(m));
+          const hasFemale = carMembers.some(m => isFemale(m));
+          const hasOppositeGenders = hasMale && hasFemale;
+          const shouldShowWarning = isCarOne && carMembers.length >= 2 && !hasOppositeGenders;
+          const isEligibleForSingleRider = carMembers.length >= 2 && hasOppositeGenders;
+
           return (
             <div
               key={carNum}
               onDrop={(e) => handleDrop(e, null, carNum)}
               onDragOver={handleDragOver}
               className={`border-2 border-dashed rounded-lg p-4 min-h-32 ${
-                isCarOne && !isCompliant
+                shouldShowWarning
                   ? 'border-red-400 bg-red-50'
                   : 'border-blue-300 bg-blue-50'
               }`}
             >
               <h5 className={`font-semibold mb-2 flex items-center justify-between ${
-                isCarOne && !isCompliant ? 'text-red-800' : 'text-blue-800'
+                shouldShowWarning ? 'text-red-800' : 'text-blue-800'
               }`}>
                 <span>Car {carNum}</span>
-                {isCarOne && !isCompliant && (
-                  <AlertTriangle size={16} className="text-red-600" />
-                )}
+                <div className="flex items-center gap-1">
+                  {isEligibleForSingleRider && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-normal" title="Eligible for single riders">
+                      1R ✓
+                    </span>
+                  )}
+                  {shouldShowWarning && (
+                    <AlertTriangle size={16} className="text-red-600" />
+                  )}
+                </div>
               </h5>
               {isCarOne && (
                 <p className="text-xs text-gray-600 mb-2">
-                  Required: 1 Male + 1 Female
+                  Required: 1 Male + 1 Female (when 2+ members)
                 </p>
               )}
               <div className="space-y-1">
@@ -1241,9 +1263,14 @@ const AssignmentsTabEditable = ({ assignments, setAssignments, members, director
 // Cars Tab - EDITABLE
 const CarsTabEditable = ({ cars, setCars }) => {
   const addCar = () => {
+    // Find the next available car number (handles gaps from deletions)
+    const maxCarNumber = cars.length > 0
+      ? Math.max(...cars.map(c => c.carNumber))
+      : 0;
+
     const newCar = {
       id: Date.now(),
-      carNumber: cars.length + 1,
+      carNumber: maxCarNumber + 1,
       make: '',
       model: '',
       color: '',
@@ -1365,6 +1392,7 @@ const NotesTabEditable = ({ notes, setNotes, ndrId, assignments, members, ndr })
   const [newUpdate, setNewUpdate] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
+  const [updateError, setUpdateError] = useState('');
   const [rideStats, setRideStats] = useState({
     completedRides: 0,
     cancelledRides: 0,
@@ -1447,7 +1475,7 @@ const NotesTabEditable = ({ notes, setNotes, ndrId, assignments, members, ndr })
 
   const addUpdate = () => {
     if (!newUpdate.trim()) {
-      alert('Please enter an update');
+      setUpdateError('Please enter an update');
       return;
     }
 
@@ -1463,6 +1491,7 @@ const NotesTabEditable = ({ notes, setNotes, ndrId, assignments, members, ndr })
       updates: [...(notes.updates || []), update]
     });
     setNewUpdate('');
+    setUpdateError('');
   };
 
   // Generate formatted report
@@ -1698,21 +1727,29 @@ const NotesTabEditable = ({ notes, setNotes, ndrId, assignments, members, ndr })
             </div>
           )}
         </div>
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={newUpdate}
-            onChange={(e) => setNewUpdate(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addUpdate()}
-            placeholder="Add a progress update (recommended every 15 minutes)..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-          />
-          <button
-            onClick={addUpdate}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Add Update
-          </button>
+        <div className="space-y-2 mb-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newUpdate}
+              onChange={(e) => {
+                setNewUpdate(e.target.value);
+                if (updateError) setUpdateError('');
+              }}
+              onKeyPress={(e) => e.key === 'Enter' && addUpdate()}
+              placeholder="Add a progress update (recommended every 15 minutes)..."
+              className={`flex-1 px-3 py-2 border rounded-md ${updateError ? 'border-red-300 focus:ring-red-500' : 'border-gray-300'}`}
+            />
+            <button
+              onClick={addUpdate}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              Add Update
+            </button>
+          </div>
+          {updateError && (
+            <p className="text-red-600 text-sm">{updateError}</p>
+          )}
         </div>
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {notes.updates?.map(update => (
