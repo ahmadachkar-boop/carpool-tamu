@@ -181,7 +181,7 @@ const PhoneRoom = () => {
     return () => clearTimeout(debounce);
   }, [formData.phone, activeNDR]);
 
-  // NEW: Calculate estimated wait time using REAL routing
+  // NEW: Calculate estimated wait time using REAL routing with FULL QUEUE SIMULATION
   useEffect(() => {
     const calculateWaitTime = async () => {
       if (!activeNDR || !formData.pickup) {
@@ -238,14 +238,20 @@ const PhoneRoom = () => {
         const directionsService = new window.google.maps.DirectionsService();
         const ridesRef = collection(db, 'rides');
         
-        // Get pending rides count
+        // Get pending rides IN ORDER (oldest first - this is the queue)
         const pendingQuery = query(
           ridesRef,
           where('ndrId', '==', activeNDR.id),
           where('status', '==', 'pending')
         );
         const pendingSnapshot = await getDocs(pendingQuery);
-        const pendingCount = pendingSnapshot.size;
+        const pendingRides = pendingSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          requestedAt: doc.data().requestedAt?.toDate() || new Date()
+        })).sort((a, b) => a.requestedAt - b.requestedAt); // Oldest first = queue order
+
+        const pendingCount = pendingRides.length;
 
         // Get active rides with full route info
         const activeQuery = query(
@@ -274,67 +280,88 @@ const PhoneRoom = () => {
           ...doc.data()
         }));
 
-        // Calculate when each car will be available
-        const carAvailability = [];
+        console.log(`🚗 Simulating queue: ${pendingCount} pending rides, ${availableCars} cars`);
 
+        // Helper function to route a full ride
+        const routeFullRide = async (origin, ride) => {
+          try {
+            const waypoints = [];
+            const dropoffs = ride.dropoffs || [ride.dropoff];
+            
+            // Add pickup as waypoint
+            waypoints.push({ location: ride.pickup, stopover: true });
+            
+            // Add intermediate dropoffs as waypoints
+            dropoffs.slice(0, -1).forEach(dropoff => {
+              waypoints.push({ location: dropoff, stopover: true });
+            });
+
+            const finalDropoff = dropoffs[dropoffs.length - 1];
+
+            const result = await new Promise((resolve, reject) => {
+              directionsService.route(
+                {
+                  origin: origin,
+                  destination: finalDropoff,
+                  waypoints: waypoints,
+                  travelMode: window.google.maps.TravelMode.DRIVING,
+                  drivingOptions: {
+                    departureTime: new Date(),
+                    trafficModel: 'bestguess'
+                  }
+                },
+                (result, status) => {
+                  if (status === 'OK') resolve(result);
+                  else reject(status);
+                }
+              );
+            });
+
+            let totalTime = 0;
+            result.routes[0].legs.forEach(leg => {
+              const duration = leg.duration_in_traffic || leg.duration;
+              totalTime += duration.value;
+            });
+
+            // Add 2 min buffer per stop (pickup + each dropoff)
+            const bufferMinutes = (waypoints.length + 1) * 2;
+            const totalMinutes = Math.ceil(totalTime / 60) + bufferMinutes;
+
+            return { minutes: totalMinutes, finalLocation: finalDropoff };
+          } catch (error) {
+            console.error('Error routing ride:', error);
+            // Fallback: 20 min average
+            const dropoffs = ride.dropoffs || [ride.dropoff];
+            return { 
+              minutes: 20, 
+              finalLocation: dropoffs[dropoffs.length - 1]
+            };
+          }
+        };
+
+        // Initialize car availability tracking
+        const carTimeline = [];
+
+        // STEP 1: Calculate when each car finishes its CURRENT active ride
         for (let carNum = 1; carNum <= availableCars; carNum++) {
           const activeRide = activeRides.find(r => r.carNumber === carNum);
           const location = carLocations[carNum];
 
           if (!activeRide) {
-            // Car is free - calculate time to reach pickup
-            if (location && location.latitude && location.longitude) {
-              try {
-                const result = await new Promise((resolve, reject) => {
-                  directionsService.route(
-                    {
-                      origin: { lat: location.latitude, lng: location.longitude },
-                      destination: formData.pickup,
-                      travelMode: window.google.maps.TravelMode.DRIVING,
-                      drivingOptions: {
-                        departureTime: new Date(),
-                        trafficModel: 'bestguess'
-                      }
-                    },
-                    (result, status) => {
-                      if (status === 'OK') resolve(result);
-                      else reject(status);
-                    }
-                  );
-                });
-
-                const durationInTraffic = result.routes[0].legs[0].duration_in_traffic || result.routes[0].legs[0].duration;
-                const minutesToPickup = Math.ceil(durationInTraffic.value / 60);
-                
-                carAvailability.push({
-                  carNumber: carNum,
-                  availableInMinutes: minutesToPickup,
-                  isFree: true
-                });
-              } catch (error) {
-                console.error(`Error routing free car ${carNum}:`, error);
-                // Fallback: assume 10 min for free car
-                carAvailability.push({
-                  carNumber: carNum,
-                  availableInMinutes: 10,
-                  isFree: true
-                });
-              }
-            } else {
-              // No location data, assume 10 min
-              carAvailability.push({
-                carNumber: carNum,
-                availableInMinutes: 10,
-                isFree: true
-              });
-            }
+            // Car is FREE - ready now
+            carTimeline.push({
+              carNumber: carNum,
+              availableAt: 0, // Available immediately
+              currentLocation: location && location.latitude ? 
+                { lat: location.latitude, lng: location.longitude } : 
+                null
+            });
           } else {
-            // Car is busy - calculate remaining route time
+            // Car is BUSY - calculate time to finish current ride
             try {
               const waypoints = [];
               const dropoffs = activeRide.dropoffs || [activeRide.dropoff];
               
-              // Determine current position
               let origin;
               if (activeRide.pickedUpAt) {
                 // Already picked up, heading to dropoffs
@@ -348,7 +375,7 @@ const PhoneRoom = () => {
                 origin = activeRide.pickup;
               }
 
-              // Add all dropoffs
+              // Add dropoffs
               dropoffs.forEach((dropoff, idx) => {
                 if (idx < dropoffs.length - 1) {
                   waypoints.push({ location: dropoff, stopover: true });
@@ -357,7 +384,6 @@ const PhoneRoom = () => {
 
               const finalDropoff = dropoffs[dropoffs.length - 1];
 
-              // Calculate time to complete current ride + time to new pickup
               const currentRouteResult = await new Promise((resolve, reject) => {
                 directionsService.route(
                   {
@@ -383,72 +409,114 @@ const PhoneRoom = () => {
                 totalCurrentRouteTime += duration.value;
               });
 
-              // Add 2 minutes buffer per stop for pickup/dropoff
               const bufferMinutes = (waypoints.length + 1) * 2;
               const currentRouteMinutes = Math.ceil(totalCurrentRouteTime / 60) + bufferMinutes;
 
-              // Now calculate from final dropoff to new pickup
-              const toNewPickupResult = await new Promise((resolve, reject) => {
-                directionsService.route(
-                  {
-                    origin: finalDropoff,
-                    destination: formData.pickup,
-                    travelMode: window.google.maps.TravelMode.DRIVING,
-                    drivingOptions: {
-                      departureTime: new Date(Date.now() + totalCurrentRouteTime * 1000),
-                      trafficModel: 'bestguess'
-                    }
-                  },
-                  (result, status) => {
-                    if (status === 'OK') resolve(result);
-                    else reject(status);
-                  }
-                );
-              });
-
-              const toNewPickupDuration = toNewPickupResult.routes[0].legs[0].duration_in_traffic || toNewPickupResult.routes[0].legs[0].duration;
-              const toNewPickupMinutes = Math.ceil(toNewPickupDuration.value / 60);
-
-              const totalAvailableInMinutes = currentRouteMinutes + toNewPickupMinutes;
-
-              carAvailability.push({
+              carTimeline.push({
                 carNumber: carNum,
-                availableInMinutes: totalAvailableInMinutes,
-                isFree: false
+                availableAt: currentRouteMinutes,
+                currentLocation: finalDropoff
               });
             } catch (error) {
-              console.error(`Error routing busy car ${carNum}:`, error);
-              // Fallback: assume 20 min to complete + 10 min to pickup
-              carAvailability.push({
+              console.error(`Error routing current ride for car ${carNum}:`, error);
+              const dropoffs = activeRide.dropoffs || [activeRide.dropoff];
+              carTimeline.push({
                 carNumber: carNum,
-                availableInMinutes: 30,
-                isFree: false
+                availableAt: 30, // Fallback estimate
+                currentLocation: dropoffs[dropoffs.length - 1]
               });
             }
           }
         }
 
-        // Find the car that will arrive soonest
-        if (carAvailability.length > 0) {
-          carAvailability.sort((a, b) => a.availableInMinutes - b.availableInMinutes);
-          const fastestCar = carAvailability[0];
+        console.log('📊 Initial car availability:', carTimeline);
+
+        // STEP 2: Simulate dispatching ALL pending rides in queue order
+        for (let i = 0; i < pendingRides.length; i++) {
+          const ride = pendingRides[i];
           
-          // Add queue position impact
-          const queueDelayPerRide = 2; // 2 min overhead per ride in queue
-          const queueDelay = pendingCount * queueDelayPerRide;
+          // Find the car that will be available soonest
+          carTimeline.sort((a, b) => a.availableAt - b.availableAt);
+          const nextCar = carTimeline[0];
+
+          console.log(`📋 Queue ${i+1}/${pendingCount}: Assigning to Car ${nextCar.carNumber} (available in ${nextCar.availableAt} min)`);
+
+          // Calculate route from car's next location to this ride
+          const origin = nextCar.currentLocation || formData.pickup; // Fallback if no location
+          const rideResult = await routeFullRide(origin, ride);
+
+          // Update this car's availability
+          nextCar.availableAt += rideResult.minutes;
+          nextCar.currentLocation = rideResult.finalLocation;
+
+          console.log(`  → Ride takes ${rideResult.minutes} min, car available again at ${nextCar.availableAt} min`);
+        }
+
+        console.log('📊 After processing queue:', carTimeline);
+
+        // STEP 3: Now calculate time to reach the NEW caller's pickup
+        const finalCarTimeline = [];
+        
+        for (const car of carTimeline) {
+          try {
+            const result = await new Promise((resolve, reject) => {
+              directionsService.route(
+                {
+                  origin: car.currentLocation || formData.pickup,
+                  destination: formData.pickup,
+                  travelMode: window.google.maps.TravelMode.DRIVING,
+                  drivingOptions: {
+                    departureTime: new Date(Date.now() + car.availableAt * 60000),
+                    trafficModel: 'bestguess'
+                  }
+                },
+                (result, status) => {
+                  if (status === 'OK') resolve(result);
+                  else reject(status);
+                }
+              );
+            });
+
+            const toNewPickupDuration = result.routes[0].legs[0].duration_in_traffic || result.routes[0].legs[0].duration;
+            const toNewPickupMinutes = Math.ceil(toNewPickupDuration.value / 60);
+
+            const totalAvailableInMinutes = car.availableAt + toNewPickupMinutes;
+
+            finalCarTimeline.push({
+              carNumber: car.carNumber,
+              availableInMinutes: totalAvailableInMinutes
+            });
+
+            console.log(`🚗 Car ${car.carNumber}: Free at ${car.availableAt} min + ${toNewPickupMinutes} min drive = ${totalAvailableInMinutes} min total`);
+          } catch (error) {
+            console.error(`Error routing to new pickup for car ${car.carNumber}:`, error);
+            finalCarTimeline.push({
+              carNumber: car.carNumber,
+              availableInMinutes: car.availableAt + 10 // Fallback
+            });
+          }
+        }
+
+        // Find the fastest car
+        if (finalCarTimeline.length > 0) {
+          finalCarTimeline.sort((a, b) => a.availableInMinutes - b.availableInMinutes);
+          const fastestCar = finalCarTimeline[0];
           
-          const estimatedMinutes = fastestCar.availableInMinutes + queueDelay;
+          const estimatedMinutes = fastestCar.availableInMinutes;
           const minWait = Math.max(5, estimatedMinutes - 3);
           const maxWait = estimatedMinutes + 5;
+
+          console.log(`✅ Final result: Car ${fastestCar.carNumber} arrives in ${estimatedMinutes} min (${minWait}-${maxWait} min range)`);
 
           setEstimatedWaitTime({
             min: minWait,
             max: maxWait,
             pendingCount,
             availableCars,
-            freeCars: carAvailability.filter(c => c.isFree).length,
+            freeCars: carTimeline.filter(c => c.availableAt === 0).length,
             fastestCar: fastestCar.carNumber,
-            usingRealRouting: true
+            usingRealRouting: true,
+            queueSimulated: true
           });
         } else {
           // Fallback if no cars
