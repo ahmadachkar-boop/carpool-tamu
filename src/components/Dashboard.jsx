@@ -19,14 +19,6 @@ const Dashboard = () => {
   const { activeNDR, loading: ndrLoading } = useActiveNDR();
   const { userProfile } = useAuth();
 
-  // Detect if running as iOS PWA
-  const isIOSPWA = () => {
-    return window.navigator.standalone === true ||
-           window.matchMedia('(display-mode: standalone)').matches;
-  };
-
-  const [isAppMode] = useState(isIOSPWA());
-
   // Quick Links data
   const quickLinks = [
     {
@@ -171,10 +163,10 @@ const Dashboard = () => {
 
   if (ndrLoading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${isAppMode ? 'bg-black' : 'bg-gradient-to-br from-gray-900 via-gray-800 to-black'}`}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#79F200] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-300 font-semibold">Loading dashboard...</p>
+          <p className="text-gray-600 font-semibold">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -186,32 +178,36 @@ const Dashboard = () => {
       value: stats.pendingRiders,
       icon: Clock,
       gradient: 'from-yellow-500 via-orange-500 to-red-500',
+      bgGradient: 'from-yellow-50 to-orange-50',
       description: 'Waiting for car',
-      glow: 'shadow-yellow-500/20'
+      textColor: 'text-orange-700'
     },
     {
       title: 'Active',
       value: stats.activeRiders,
       icon: Activity,
       gradient: 'from-[#79F200] via-[#6dd100] to-[#5bc000]',
+      bgGradient: 'from-green-50 to-lime-50',
       description: 'On the road',
-      glow: 'shadow-[#79F200]/30'
+      textColor: 'text-green-700'
     },
     {
       title: 'Completed',
       value: stats.completedRiders,
       icon: BarChart3,
       gradient: 'from-blue-500 via-cyan-500 to-teal-500',
+      bgGradient: 'from-blue-50 to-cyan-50',
       description: 'Delivered safe',
-      glow: 'shadow-blue-500/20'
+      textColor: 'text-blue-700'
     },
     {
       title: 'Cars',
       value: stats.availableCars,
       icon: Car,
       gradient: 'from-purple-500 via-pink-500 to-rose-500',
+      bgGradient: 'from-purple-50 to-pink-50',
       description: 'Ready to go',
-      glow: 'shadow-purple-500/20'
+      textColor: 'text-purple-700'
     }
   ];
 
@@ -222,21 +218,21 @@ const Dashboard = () => {
   };
 
   return (
-    <div className={`min-h-screen ${isAppMode ? 'bg-black pb-24' : 'bg-gradient-to-br from-gray-900 via-gray-800 to-black'} text-white`}>
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           <div>
-            <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-900">
               Hey, {userProfile?.name?.split(' ')[0] || 'Member'}! 👋
             </h1>
-            <p className="text-gray-400 mt-1 font-medium">
+            <p className="text-gray-600 mt-1 font-medium">
               {activeNDR ? activeNDR.eventName : 'No active operating night'}
             </p>
           </div>
           {activeNDR && (
             <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#5bc000] rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#5bc000] rounded-2xl blur-lg opacity-30 group-hover:opacity-50 transition"></div>
               <div className="relative bg-gradient-to-r from-[#79F200] to-[#5bc000] px-6 py-3 rounded-2xl shadow-xl">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse"></div>
@@ -249,12 +245,12 @@ const Dashboard = () => {
         </div>
 
         {/* Quick Links */}
-        <div className={`relative ${isAppMode ? 'bg-gray-900/50' : 'bg-white/5'} backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl`}>
+        <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-200">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
               <Zap className="text-white" size={20} />
             </div>
-            <h2 className="text-xl font-black text-white">Quick Actions</h2>
+            <h2 className="text-xl font-black text-gray-900">Quick Actions</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {quickLinks.map((link, index) => (
@@ -263,18 +259,17 @@ const Dashboard = () => {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group relative overflow-hidden rounded-2xl p-4 transform hover:scale-105 transition-all duration-300"
+                className="group relative overflow-hidden rounded-2xl p-4 bg-gray-50 hover:bg-gray-100 transform hover:scale-105 transition-all duration-300 border border-gray-200"
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${link.gradient} opacity-10 group-hover:opacity-20 transition`}></div>
                 <div className="relative">
                   <div className="flex items-center justify-between mb-2">
                     <div className={`w-12 h-12 bg-gradient-to-br ${link.gradient} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
                       <link.icon className="text-white" size={22} />
                     </div>
-                    <ExternalLink className="text-gray-500 group-hover:text-gray-300 transition-colors" size={16} />
+                    <ExternalLink className="text-gray-400 group-hover:text-gray-600 transition-colors" size={16} />
                   </div>
-                  <h3 className="font-bold text-white mb-1">{link.name}</h3>
-                  <p className="text-xs text-gray-400">{link.description}</p>
+                  <h3 className="font-bold text-gray-900 mb-1">{link.name}</h3>
+                  <p className="text-xs text-gray-600">{link.description}</p>
                 </div>
               </a>
             ))}
@@ -283,22 +278,22 @@ const Dashboard = () => {
 
         {/* Announcements */}
         {announcements.length > 0 && (
-          <div className={`relative ${isAppMode ? 'bg-blue-900/20' : 'bg-blue-500/10'} backdrop-blur-xl rounded-3xl p-6 border border-blue-500/20 shadow-2xl`}>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-3xl p-6 shadow-xl border-2 border-blue-200">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
                 <Megaphone className="text-white" size={20} />
               </div>
-              <h2 className="text-xl font-black text-white">Announcements</h2>
+              <h2 className="text-xl font-black text-gray-900">Announcements</h2>
             </div>
             <div className="space-y-3">
               {announcements.map(announcement => (
-                <div key={announcement.id} className="bg-white/5 backdrop-blur rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition">
+                <div key={announcement.id} className="bg-white rounded-2xl p-4 shadow-sm border border-blue-100 hover:shadow-md transition">
                   <div className="flex items-start gap-3">
-                    <Bell className="text-blue-400 mt-1 flex-shrink-0" size={18} />
+                    <Bell className="text-blue-500 mt-1 flex-shrink-0" size={18} />
                     <div className="flex-1">
-                      <h4 className="font-bold text-white">{announcement.title}</h4>
-                      <p className="text-sm text-gray-300 mt-1">{announcement.message}</p>
-                      <p className="text-xs text-gray-500 mt-2">
+                      <h4 className="font-bold text-gray-900">{announcement.title}</h4>
+                      <p className="text-sm text-gray-600 mt-1">{announcement.message}</p>
+                      <p className="text-xs text-gray-400 mt-2">
                         {formatDate(announcement.createdAt)} • {announcement.createdBy}
                       </p>
                     </div>
@@ -311,15 +306,15 @@ const Dashboard = () => {
 
         {/* No Active NDR Warning */}
         {!activeNDR && (
-          <div className="relative bg-gradient-to-br from-yellow-500/20 to-orange-500/20 backdrop-blur-xl rounded-3xl p-8 text-center border border-yellow-500/30 shadow-2xl">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full mb-4 shadow-2xl">
+          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-3xl p-8 text-center border-2 border-yellow-300 shadow-xl">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full mb-4 shadow-2xl">
               <AlertCircle className="text-white" size={40} />
             </div>
-            <h3 className="text-3xl font-black text-white mb-3">No Active NDR</h3>
-            <p className="text-gray-300 mb-4 max-w-2xl mx-auto">
+            <h3 className="text-3xl font-black text-gray-900 mb-3">No Active NDR</h3>
+            <p className="text-gray-700 mb-4 max-w-2xl mx-auto">
               There is currently no active operating night. Statistics will appear once an NDR is activated.
             </p>
-            <p className="text-sm text-gray-400 font-semibold">
+            <p className="text-sm text-gray-600 font-semibold">
               Directors: Activate an event in NDR Reports
             </p>
           </div>
@@ -331,9 +326,8 @@ const Dashboard = () => {
             {statCards.map((stat, index) => (
               <div
                 key={index}
-                className={`group relative overflow-hidden rounded-3xl p-6 transform hover:scale-105 transition-all duration-300 ${stat.glow} shadow-2xl`}
+                className={`group relative overflow-hidden bg-gradient-to-br ${stat.bgGradient} rounded-3xl p-6 transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl border border-gray-200`}
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-10 group-hover:opacity-20 transition`}></div>
                 <div className={`absolute -right-8 -top-8 w-32 h-32 bg-gradient-to-br ${stat.gradient} rounded-full opacity-10 blur-2xl group-hover:opacity-20 transition`}></div>
 
                 <div className="relative">
@@ -343,8 +337,8 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-gray-400 text-sm font-semibold">{stat.title}</p>
-                    <p className="text-5xl font-black text-white">{stat.value}</p>
+                    <p className="text-gray-600 text-sm font-semibold">{stat.title}</p>
+                    <p className={`text-5xl font-black ${stat.textColor}`}>{stat.value}</p>
                     <p className="text-gray-500 text-xs font-medium">{stat.description}</p>
                   </div>
                 </div>
@@ -356,13 +350,13 @@ const Dashboard = () => {
         {/* Bottom Grid: Events & Leaderboard */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Upcoming Events */}
-          <div className={`relative ${isAppMode ? 'bg-gray-900/50' : 'bg-white/5'} backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl`}>
+          <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
                   <CalendarIcon className="text-white" size={20} />
                 </div>
-                <h2 className="text-xl font-black text-white">Events</h2>
+                <h2 className="text-xl font-black text-gray-900">Events</h2>
               </div>
               <Link to="/calendar" className="text-sm text-[#79F200] hover:text-[#6dd100] font-bold transition">
                 View All →
@@ -373,7 +367,7 @@ const Dashboard = () => {
                 <p className="text-gray-500 text-center py-8 font-medium">No upcoming events</p>
               ) : (
                 upcomingEvents.map(event => (
-                  <div key={event.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition border border-white/5">
+                  <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition border border-gray-200">
                     <div className={`w-1 h-14 rounded-full ${
                       event.type === 'operating night' ? 'bg-gradient-to-b from-red-500 to-rose-500' :
                       event.type === 'gasups' ? 'bg-gradient-to-b from-blue-500 to-cyan-500' :
@@ -381,8 +375,8 @@ const Dashboard = () => {
                       'bg-gradient-to-b from-purple-500 to-pink-500'
                     } shadow-lg`}></div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-white truncate">{event.name}</h4>
-                      <p className="text-xs text-gray-400 font-medium">
+                      <h4 className="font-bold text-gray-900 truncate">{event.name}</h4>
+                      <p className="text-xs text-gray-600 font-medium">
                         {event.startDate?.toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -392,10 +386,10 @@ const Dashboard = () => {
                       </p>
                     </div>
                     <span className={`px-3 py-1.5 text-xs font-bold rounded-full ${
-                      event.type === 'operating night' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
-                      event.type === 'gasups' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-                      event.type === 'pickups' ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
-                      'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      event.type === 'operating night' ? 'bg-red-100 text-red-700 border border-red-200' :
+                      event.type === 'gasups' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                      event.type === 'pickups' ? 'bg-green-100 text-green-700 border border-green-200' :
+                      'bg-purple-100 text-purple-700 border border-purple-200'
                     }`}>
                       {event.type}
                     </span>
@@ -406,19 +400,19 @@ const Dashboard = () => {
           </div>
 
           {/* Leaderboard */}
-          <div className={`relative ${isAppMode ? 'bg-gray-900/50' : 'bg-white/5'} backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl`}>
+          <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-200">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
                 <Award className="text-white" size={20} />
               </div>
-              <h2 className="text-xl font-black text-white">Top Members</h2>
+              <h2 className="text-xl font-black text-gray-900">Top Members</h2>
             </div>
             <div className="space-y-3">
               {leaderboard.length === 0 ? (
                 <p className="text-gray-500 text-center py-8 font-medium">No members yet</p>
               ) : (
                 leaderboard.map((member, index) => (
-                  <div key={member.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition border border-white/5">
+                  <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition border border-gray-200">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-white shadow-lg ${
                       index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
                       index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' :
@@ -428,8 +422,8 @@ const Dashboard = () => {
                       {index + 1}
                     </div>
                     <div className="flex-1">
-                      <h4 className="font-bold text-white">{member.name}</h4>
-                      <p className="text-xs text-gray-400 font-medium">{member.nightsWorked || 0} nights</p>
+                      <h4 className="font-bold text-gray-900">{member.name}</h4>
+                      <p className="text-xs text-gray-600 font-medium">{member.nightsWorked || 0} nights</p>
                     </div>
                     <span className="text-2xl font-black text-[#79F200]">{member.points || 0}</span>
                   </div>
@@ -442,22 +436,22 @@ const Dashboard = () => {
         {/* Tonight's Stats */}
         {activeNDR && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className={`relative ${isAppMode ? 'bg-gray-900/50' : 'bg-white/5'} backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl`}>
+            <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-gradient-to-br from-[#79F200] to-[#5bc000] rounded-xl flex items-center justify-center shadow-lg">
                   <BarChart3 className="text-gray-900" size={20} />
                 </div>
-                <h2 className="text-xl font-black text-white">Tonight's Stats</h2>
+                <h2 className="text-xl font-black text-gray-900">Tonight's Stats</h2>
               </div>
               <div className="space-y-3">
-                <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
-                  <span className="text-gray-300 font-bold">Total Requests</span>
-                  <span className="text-3xl font-black text-white">
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-200">
+                  <span className="text-gray-700 font-bold">Total Requests</span>
+                  <span className="text-3xl font-black text-gray-900">
                     {stats.pendingRiders + stats.activeRiders + stats.completedRiders}
                   </span>
                 </div>
-                <div className="flex justify-between items-center p-4 bg-white/5 rounded-2xl border border-white/10">
-                  <span className="text-gray-300 font-bold">Completion Rate</span>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-200">
+                  <span className="text-gray-700 font-bold">Completion Rate</span>
                   <span className="text-3xl font-black text-[#79F200]">
                     {stats.pendingRiders + stats.activeRiders + stats.completedRiders > 0
                       ? Math.round((stats.completedRiders / (stats.pendingRiders + stats.activeRiders + stats.completedRiders)) * 100)
@@ -467,23 +461,23 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className={`relative ${isAppMode ? 'bg-gray-900/50' : 'bg-white/5'} backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl`}>
+            <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
                   <Users className="text-white" size={20} />
                 </div>
-                <h2 className="text-xl font-black text-white">System Status</h2>
+                <h2 className="text-xl font-black text-gray-900">System Status</h2>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-2xl border border-green-500/30">
-                  <span className="text-white font-bold">Phone Room</span>
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-2xl border border-green-200">
+                  <span className="text-gray-900 font-bold">Phone Room</span>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-[#79F200] rounded-full animate-pulse shadow-lg shadow-[#79F200]/50"></div>
                     <span className="px-3 py-1 bg-[#79F200] text-gray-900 text-xs font-black rounded-full">ONLINE</span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-2xl border border-green-500/30">
-                  <span className="text-white font-bold">Ride Management</span>
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-2xl border border-green-200">
+                  <span className="text-gray-900 font-bold">Ride Management</span>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-[#79F200] rounded-full animate-pulse shadow-lg shadow-[#79F200]/50"></div>
                     <span className="px-3 py-1 bg-[#79F200] text-gray-900 text-xs font-black rounded-full">ONLINE</span>
