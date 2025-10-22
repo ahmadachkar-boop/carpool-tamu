@@ -396,8 +396,49 @@ const RideManagement = () => {
     try {
       const carNumber = parseInt(assigningRide.selectedCar);
       const ndrDoc = await getDoc(doc(db, 'ndrs', activeNDR.id));
-      const cars = ndrDoc.data().cars || [];
+      const ndrData = ndrDoc.data();
+      const cars = ndrData.cars || [];
       const carInfo = cars.find(c => c.carNumber === carNumber);
+
+      // ENFORCE: Single rider rides MUST be assigned to Car 1 with opposite gender members
+      if (assigningRide.riders === 1) {
+        if (carNumber !== 1) {
+          alert('Single rider rides MUST be assigned to Car 1 for safety reasons.');
+          return;
+        }
+
+        // Validate Car 1 has opposite gender members
+        const car1Assignments = ndrData.assignments?.cars?.[1] || [];
+        if (car1Assignments.length < 2) {
+          alert('Car 1 must have at least 2 members assigned before accepting single rider rides. Please assign more members to Car 1 in the NDR assignments.');
+          return;
+        }
+
+        // Fetch Car 1 member details to check genders
+        const membersRef = collection(db, 'members');
+        const car1Members = [];
+        for (const memberId of car1Assignments) {
+          const memberDoc = await getDoc(doc(db, 'members', memberId));
+          if (memberDoc.exists()) {
+            car1Members.push(memberDoc.data());
+          }
+        }
+
+        const hasMale = car1Members.some(m => {
+          const gender = m.gender?.toLowerCase();
+          return gender === 'male' || gender === 'm' || gender === 'man';
+        });
+
+        const hasFemale = car1Members.some(m => {
+          const gender = m.gender?.toLowerCase();
+          return gender === 'female' || gender === 'f' || gender === 'woman';
+        });
+
+        if (!hasMale || !hasFemale) {
+          alert('Car 1 must have both male and female members assigned before accepting single rider rides. Please update Car 1 assignments in the NDR.');
+          return;
+        }
+      }
 
       await updateDoc(doc(db, 'rides', assigningRide.id), {
         status: 'active',
@@ -880,6 +921,13 @@ const RideManagement = () => {
                     /* CAR ASSIGNMENT MODE */
                     <div className="space-y-3">
                       <p className="font-semibold">Assign car to {ride.patronName}</p>
+                      {assigningRide.riders === 1 && (
+                        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
+                          <p className="text-yellow-800 text-sm font-medium">
+                            ⚠️ Single rider rides MUST be assigned to Car 1 with opposite gender members for safety.
+                          </p>
+                        </div>
+                      )}
                       <select
                         value={assigningRide.selectedCar}
                         onChange={(e) => setAssigningRide({...assigningRide, selectedCar: e.target.value})}
@@ -887,7 +935,13 @@ const RideManagement = () => {
                       >
                         <option value="">Select a car...</option>
                         {Array.from({ length: availableCars }, (_, i) => i + 1).map(num => (
-                          <option key={num} value={num}>Car {num}</option>
+                          <option
+                            key={num}
+                            value={num}
+                            disabled={assigningRide.riders === 1 && num !== 1}
+                          >
+                            Car {num}{assigningRide.riders === 1 && num !== 1 ? ' (Not available for single riders)' : ''}
+                          </option>
                         ))}
                       </select>
                       <div className="flex gap-2">
