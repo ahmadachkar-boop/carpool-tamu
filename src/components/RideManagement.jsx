@@ -400,42 +400,37 @@ const RideManagement = () => {
       const cars = ndrData.cars || [];
       const carInfo = cars.find(c => c.carNumber === carNumber);
 
-      // ENFORCE: Single rider rides MUST be assigned to Car 1 with opposite gender members
+      // ENFORCE: Single rider rides MUST be assigned to a car with opposite gender members
       if (assigningRide.riders === 1) {
-        if (carNumber !== 1) {
-          alert('Single rider rides MUST be assigned to Car 1 for safety reasons.');
+        // Validate selected car has opposite gender members
+        const carAssignments = ndrData.assignments?.cars?.[carNumber] || [];
+        if (carAssignments.length < 2) {
+          alert(`Car ${carNumber} must have at least 2 members assigned before accepting single rider rides. Please assign more members to Car ${carNumber} in the NDR assignments.`);
           return;
         }
 
-        // Validate Car 1 has opposite gender members
-        const car1Assignments = ndrData.assignments?.cars?.[1] || [];
-        if (car1Assignments.length < 2) {
-          alert('Car 1 must have at least 2 members assigned before accepting single rider rides. Please assign more members to Car 1 in the NDR assignments.');
-          return;
-        }
-
-        // Fetch Car 1 member details to check genders
+        // Fetch car member details to check genders
         const membersRef = collection(db, 'members');
-        const car1Members = [];
-        for (const memberId of car1Assignments) {
+        const carMembers = [];
+        for (const memberId of carAssignments) {
           const memberDoc = await getDoc(doc(db, 'members', memberId));
           if (memberDoc.exists()) {
-            car1Members.push(memberDoc.data());
+            carMembers.push(memberDoc.data());
           }
         }
 
-        const hasMale = car1Members.some(m => {
+        const hasMale = carMembers.some(m => {
           const gender = m.gender?.toLowerCase();
           return gender === 'male' || gender === 'm' || gender === 'man';
         });
 
-        const hasFemale = car1Members.some(m => {
+        const hasFemale = carMembers.some(m => {
           const gender = m.gender?.toLowerCase();
           return gender === 'female' || gender === 'f' || gender === 'woman';
         });
 
         if (!hasMale || !hasFemale) {
-          alert('Car 1 must have both male and female members assigned before accepting single rider rides. Please update Car 1 assignments in the NDR.');
+          alert(`Car ${carNumber} must have both male and female members assigned before accepting single rider rides. Please update Car ${carNumber} assignments in the NDR or select a different car.`);
           return;
         }
       }
@@ -924,7 +919,7 @@ const RideManagement = () => {
                       {assigningRide.riders === 1 && (
                         <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3">
                           <p className="text-yellow-800 text-sm font-medium">
-                            ⚠️ Single rider rides MUST be assigned to Car 1 with opposite gender members for safety.
+                            ⚠️ Single rider rides MUST be assigned to a car with opposite gender members for safety.
                           </p>
                         </div>
                       )}
@@ -938,9 +933,8 @@ const RideManagement = () => {
                           <option
                             key={num}
                             value={num}
-                            disabled={assigningRide.riders === 1 && num !== 1}
                           >
-                            Car {num}{assigningRide.riders === 1 && num !== 1 ? ' (Not available for single riders)' : ''}
+                            Car {num}
                           </option>
                         ))}
                       </select>
