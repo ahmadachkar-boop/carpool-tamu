@@ -12,6 +12,11 @@ export const MESSAGE_STATUS = {
 
 // Mark message as delivered
 export const markMessageDelivered = async (messageId) => {
+  if (!messageId) {
+    console.warn('No messageId provided to markMessageDelivered');
+    return;
+  }
+
   try {
     const messageRef = doc(db, 'couchMessages', messageId);
     await updateDoc(messageRef, {
@@ -27,6 +32,11 @@ export const markMessageDelivered = async (messageId) => {
 
 // Mark message as read
 export const markMessageRead = async (messageId) => {
+  if (!messageId) {
+    console.warn('No messageId provided to markMessageRead');
+    return;
+  }
+
   try {
     const messageRef = doc(db, 'couchMessages', messageId);
     await updateDoc(messageRef, {
@@ -44,6 +54,11 @@ const TYPING_TIMEOUT = 3000; // 3 seconds
 
 // Set typing status for a car
 export const setTypingStatus = async (ndrId, carNumber, sender, isTyping) => {
+  if (!ndrId || !carNumber || !sender) {
+    console.warn('Missing parameters for setTypingStatus');
+    return;
+  }
+
   try {
     const typingRef = doc(db, 'typingStatus', `${ndrId}_${carNumber}_${sender}`);
 
@@ -68,29 +83,39 @@ export const setTypingStatus = async (ndrId, carNumber, sender, isTyping) => {
 
 // Listen to typing status
 export const listenToTypingStatus = (ndrId, carNumber, sender, callback) => {
-  // Listen to the OTHER person's typing status
-  const otherSender = sender === 'couch' ? 'navigator' : 'couch';
-  const typingRef = doc(db, 'typingStatus', `${ndrId}_${carNumber}_${otherSender}`);
+  if (!ndrId || !carNumber || !sender || !callback) {
+    console.warn('Missing parameters for listenToTypingStatus');
+    return () => {}; // Return empty unsubscribe function
+  }
 
-  const unsubscribe = onSnapshot(typingRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.data();
+  try {
+    // Listen to the OTHER person's typing status
+    const otherSender = sender === 'couch' ? 'navigator' : 'couch';
+    const typingRef = doc(db, 'typingStatus', `${ndrId}_${carNumber}_${otherSender}`);
 
-      // Check if typing status is recent (within last 5 seconds)
-      const now = Date.now();
-      const updatedAt = data.updatedAt?.toDate?.()?.getTime() || 0;
-      const isRecent = (now - updatedAt) < 5000;
+    const unsubscribe = onSnapshot(typingRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
 
-      callback(data.typing === true && isRecent);
-    } else {
+        // Check if typing status is recent (within last 5 seconds)
+        const now = Date.now();
+        const updatedAt = data.updatedAt?.toDate?.()?.getTime() || 0;
+        const isRecent = (now - updatedAt) < 5000;
+
+        callback(data.typing === true && isRecent);
+      } else {
+        callback(false);
+      }
+    }, (error) => {
+      console.error('Error listening to typing status:', error);
       callback(false);
-    }
-  }, (error) => {
-    console.error('Error listening to typing status:', error);
-    callback(false);
-  });
+    });
 
-  return unsubscribe;
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up typing listener:', error);
+    return () => {}; // Return empty unsubscribe function
+  }
 };
 
 // Debounced typing indicator
@@ -115,6 +140,10 @@ export const handleTypingIndicator = (ndrId, carNumber, sender, isTyping) => {
 
 // Get message status display
 export const getMessageStatusDisplay = (message, viewMode) => {
+  if (!message || !viewMode) {
+    return null;
+  }
+
   // Only show status for messages sent by current user
   const isSentByMe = (viewMode === 'navigator' && message.sender === 'navigator') ||
                       (viewMode === 'couch' && message.sender === 'couch');
@@ -123,25 +152,34 @@ export const getMessageStatusDisplay = (message, viewMode) => {
     return null;
   }
 
-  if (message.status === MESSAGE_STATUS.READ && message.readAt) {
+  try {
+    if (message.status === MESSAGE_STATUS.READ && message.readAt) {
+      return {
+        icon: '✓✓',
+        color: 'text-blue-600',
+        tooltip: `Read at ${message.readAt.toDate?.().toLocaleTimeString() || 'N/A'}`
+      };
+    }
+
+    if (message.status === MESSAGE_STATUS.DELIVERED && message.deliveredAt) {
+      return {
+        icon: '✓✓',
+        color: 'text-gray-400',
+        tooltip: `Delivered at ${message.deliveredAt.toDate?.().toLocaleTimeString() || 'N/A'}`
+      };
+    }
+
     return {
-      icon: '✓✓',
-      color: 'text-blue-600',
-      tooltip: `Read at ${message.readAt.toDate().toLocaleTimeString()}`
+      icon: '✓',
+      color: 'text-gray-300',
+      tooltip: 'Sent'
+    };
+  } catch (error) {
+    console.error('Error getting message status display:', error);
+    return {
+      icon: '✓',
+      color: 'text-gray-300',
+      tooltip: 'Sent'
     };
   }
-
-  if (message.status === MESSAGE_STATUS.DELIVERED && message.deliveredAt) {
-    return {
-      icon: '✓✓',
-      color: 'text-gray-400',
-      tooltip: `Delivered at ${message.deliveredAt.toDate().toLocaleTimeString()}`
-    };
-  }
-
-  return {
-    icon: '✓',
-    color: 'text-gray-300',
-    tooltip: 'Sent'
-  };
 };

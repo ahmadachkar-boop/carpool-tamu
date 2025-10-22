@@ -235,62 +235,107 @@ const CouchNavigator = () => {
 
   // Connection status monitoring
   useEffect(() => {
-    const unsubscribeConnection = addConnectionListener((online) => {
-      setIsOnline(online);
-      if (online) {
-        console.log('🟢 Back online - checking for queued messages');
-        const queueLength = getMessageQueue().length;
-        setQueuedMessagesCount(queueLength);
+    const syncOnReconnect = async () => {
+      if (!activeNDR) return;
 
-        // Auto-sync when connection restored
-        if (queueLength > 0 && activeNDR) {
+      try {
+        const queueLength = getMessageQueue().length;
+        if (queueLength > 0) {
           console.log('🔄 Auto-syncing queued messages...');
-          setTimeout(() => syncMessages(), 1000); // Small delay to ensure Firestore is ready
+          await syncMessages();
         }
+      } catch (error) {
+        console.error('Error in syncOnReconnect:', error);
+      }
+    };
+
+    const unsubscribeConnection = addConnectionListener((online) => {
+      try {
+        setIsOnline(online);
+        if (online) {
+          console.log('🟢 Back online - checking for queued messages');
+          const queueLength = getMessageQueue().length;
+          setQueuedMessagesCount(queueLength);
+
+          // Auto-sync when connection restored
+          setTimeout(() => syncOnReconnect(), 1000); // Small delay to ensure Firestore is ready
+        }
+      } catch (error) {
+        console.error('Error in connection listener:', error);
       }
     });
 
     const unsubscribeFirestore = addFirestoreConnectionListener((connected) => {
-      setFirestoreConnectionState(connected);
-    });
-
-    // Initial queue check
-    setQueuedMessagesCount(getMessageQueue().length);
-
-    // Register sync callback for app resume
-    setSyncCallback(() => {
-      if (activeNDR) {
-        syncMessages();
+      try {
+        setFirestoreConnectionState(connected);
+      } catch (error) {
+        console.error('Error in Firestore connection listener:', error);
       }
     });
 
+    // Initial queue check
+    try {
+      setQueuedMessagesCount(getMessageQueue().length);
+    } catch (error) {
+      console.error('Error checking initial queue:', error);
+    }
+
+    // Register sync callback for app resume
+    try {
+      setSyncCallback(() => {
+        if (activeNDR && activeNDR.id) {
+          syncMessages();
+        }
+      });
+    } catch (error) {
+      console.error('Error setting sync callback:', error);
+    }
+
     return () => {
-      unsubscribeConnection();
-      unsubscribeFirestore();
+      try {
+        if (unsubscribeConnection && typeof unsubscribeConnection === 'function') {
+          unsubscribeConnection();
+        }
+        if (unsubscribeFirestore && typeof unsubscribeFirestore === 'function') {
+          unsubscribeFirestore();
+        }
+      } catch (error) {
+        console.error('Error cleaning up connection monitoring:', error);
+      }
     };
   }, [activeNDR]);
 
   // App resume detection
   useEffect(() => {
     const unsubscribeResume = addAppResumeListener(() => {
-      console.log('📱 App resumed - reconnecting...');
+      try {
+        console.log('📱 App resumed - reconnecting...');
 
-      // Update queue count
-      setQueuedMessagesCount(getMessageQueue().length);
+        // Update queue count
+        setQueuedMessagesCount(getMessageQueue().length);
 
-      // Load cached location if available
-      const cachedLoc = getCachedLocation();
-      if (cachedLoc && selectedCar && locationEnabled) {
-        console.log('📍 Using cached location from resume');
-        setCarLocations(prev => ({
-          ...prev,
-          [selectedCar]: cachedLoc
-        }));
+        // Load cached location if available
+        const cachedLoc = getCachedLocation();
+        if (cachedLoc && selectedCar && locationEnabled) {
+          console.log('📍 Using cached location from resume');
+          setCarLocations(prev => ({
+            ...prev,
+            [selectedCar]: cachedLoc
+          }));
+        }
+      } catch (error) {
+        console.error('Error in app resume handler:', error);
       }
     });
 
     return () => {
-      unsubscribeResume();
+      try {
+        if (unsubscribeResume && typeof unsubscribeResume === 'function') {
+          unsubscribeResume();
+        }
+      } catch (error) {
+        console.error('Error cleaning up app resume listener:', error);
+      }
     };
   }, [selectedCar, locationEnabled]);
 
@@ -761,10 +806,20 @@ const CouchNavigator = () => {
   // Set initial map center only once when car location first becomes available
   useEffect(() => {
     if (selectedCar && carLocations[selectedCar] && !initialMapCenterRef.current) {
-      initialMapCenterRef.current = {
-        lat: carLocations[selectedCar].latitude,
-        lng: carLocations[selectedCar].longitude
-      };
+      const location = carLocations[selectedCar];
+      // Validate that coordinates are valid numbers
+      if (location.latitude && location.longitude &&
+          typeof location.latitude === 'number' &&
+          typeof location.longitude === 'number' &&
+          !isNaN(location.latitude) && !isNaN(location.longitude)) {
+        initialMapCenterRef.current = {
+          lat: location.latitude,
+          lng: location.longitude
+        };
+        console.log('✅ Set initial map center:', initialMapCenterRef.current);
+      } else {
+        console.warn('⚠️ Invalid coordinates for initial map center:', location);
+      }
     }
     // Reset when car changes
     if (!selectedCar) {
@@ -916,21 +971,35 @@ const CouchNavigator = () => {
           const latestMessage = msgs[msgs.length - 1];
           if ((viewMode === 'navigator' && latestMessage.sender === 'couch') ||
               (viewMode === 'couch' && latestMessage.sender === 'navigator')) {
-            showNotification('New Message', latestMessage.message);
-            playNotificationSound();
-            hapticNewMessage(); // Haptic feedback for new message
+            try {
+              showNotification('New Message', latestMessage.message);
+              playNotificationSound();
+              hapticNewMessage(); // Haptic feedback for new message
 
-            // Mark message as delivered
-            markMessageDelivered(latestMessage.id);
+              // Mark message as delivered
+              if (latestMessage.id) {
+                markMessageDelivered(latestMessage.id).catch(err => {
+                  console.error('Failed to mark message as delivered:', err);
+                });
+              }
+            } catch (error) {
+              console.error('Error processing new message notification:', error);
+            }
           }
         }
 
         // Mark all received messages as read (they're visible in the chat)
         msgs.forEach(msg => {
-          const isReceivedMessage = (viewMode === 'navigator' && msg.sender === 'couch') ||
-                                     (viewMode === 'couch' && msg.sender === 'navigator');
-          if (isReceivedMessage && !msg.readAt) {
-            markMessageRead(msg.id);
+          try {
+            const isReceivedMessage = (viewMode === 'navigator' && msg.sender === 'couch') ||
+                                       (viewMode === 'couch' && msg.sender === 'navigator');
+            if (isReceivedMessage && !msg.readAt && msg.id) {
+              markMessageRead(msg.id).catch(err => {
+                console.error('Failed to mark message as read:', err);
+              });
+            }
+          } catch (error) {
+            console.error('Error marking message as read:', error);
           }
         });
 
@@ -946,22 +1015,40 @@ const CouchNavigator = () => {
 
   // Typing indicator listener
   useEffect(() => {
-    if (!activeNDR || !selectedCar) {
+    if (!activeNDR || !activeNDR.id || !selectedCar) {
       setIsOtherTyping(false);
       return;
     }
 
     const carNum = parseInt(selectedCar, 10);
+    if (isNaN(carNum)) {
+      console.warn('⚠️ Invalid car number for typing listener');
+      setIsOtherTyping(false);
+      return;
+    }
+
     console.log(`⌨️ Setting up typing listener for car ${carNum}`);
 
-    const unsubscribe = listenToTypingStatus(activeNDR.id, carNum, viewMode, (isTyping) => {
-      setIsOtherTyping(isTyping);
-    });
+    try {
+      const unsubscribe = listenToTypingStatus(activeNDR.id, carNum, viewMode, (isTyping) => {
+        setIsOtherTyping(isTyping);
+      });
 
-    return () => {
-      unsubscribe();
+      return () => {
+        try {
+          if (unsubscribe && typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+        } catch (error) {
+          console.error('Error unsubscribing from typing status:', error);
+        }
+        setIsOtherTyping(false);
+      };
+    } catch (error) {
+      console.error('Error setting up typing listener:', error);
       setIsOtherTyping(false);
-    };
+      return () => {};
+    }
   }, [activeNDR, selectedCar, viewMode]);
 
   useEffect(() => {
@@ -1493,8 +1580,12 @@ const CouchNavigator = () => {
       hapticMessageSent(); // Success haptic
 
       // Clear typing indicator
-      if (activeNDR && selectedCar) {
-        handleTypingIndicator(activeNDR.id, carNum, viewMode, false);
+      try {
+        if (activeNDR && activeNDR.id && selectedCar) {
+          handleTypingIndicator(activeNDR.id, carNum, viewMode, false);
+        }
+      } catch (error) {
+        console.error('Error clearing typing indicator after send:', error);
       }
 
       setTimeout(() => setDebugStatus(''), 2000);
@@ -1981,25 +2072,33 @@ const CouchNavigator = () => {
                       onChange={(e) => {
                         setNewMessage(e.target.value);
                         // Send typing indicator
-                        if (activeNDR && selectedCar) {
-                          handleTypingIndicator(
-                            activeNDR.id,
-                            parseInt(selectedCar, 10),
-                            viewMode,
-                            e.target.value.length > 0
-                          );
+                        try {
+                          if (activeNDR && activeNDR.id && selectedCar) {
+                            handleTypingIndicator(
+                              activeNDR.id,
+                              parseInt(selectedCar, 10),
+                              viewMode,
+                              e.target.value.length > 0
+                            );
+                          }
+                        } catch (error) {
+                          console.error('Error setting typing indicator:', error);
                         }
                       }}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                       onBlur={() => {
                         // Clear typing indicator when focus lost
-                        if (activeNDR && selectedCar) {
-                          handleTypingIndicator(
-                            activeNDR.id,
-                            parseInt(selectedCar, 10),
-                            viewMode,
-                            false
-                          );
+                        try {
+                          if (activeNDR && activeNDR.id && selectedCar) {
+                            handleTypingIndicator(
+                              activeNDR.id,
+                              parseInt(selectedCar, 10),
+                              viewMode,
+                              false
+                            );
+                          }
+                        } catch (error) {
+                          console.error('Error clearing typing indicator:', error);
                         }
                       }}
                       placeholder="Type a message..."
@@ -2130,25 +2229,33 @@ const CouchNavigator = () => {
                       onChange={(e) => {
                         setNewMessage(e.target.value);
                         // Send typing indicator
-                        if (activeNDR && selectedCar) {
-                          handleTypingIndicator(
-                            activeNDR.id,
-                            parseInt(selectedCar, 10),
-                            viewMode,
-                            e.target.value.length > 0
-                          );
+                        try {
+                          if (activeNDR && activeNDR.id && selectedCar) {
+                            handleTypingIndicator(
+                              activeNDR.id,
+                              parseInt(selectedCar, 10),
+                              viewMode,
+                              e.target.value.length > 0
+                            );
+                          }
+                        } catch (error) {
+                          console.error('Error setting typing indicator:', error);
                         }
                       }}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                       onBlur={() => {
                         // Clear typing indicator when focus lost
-                        if (activeNDR && selectedCar) {
-                          handleTypingIndicator(
-                            activeNDR.id,
-                            parseInt(selectedCar, 10),
-                            viewMode,
-                            false
-                          );
+                        try {
+                          if (activeNDR && activeNDR.id && selectedCar) {
+                            handleTypingIndicator(
+                              activeNDR.id,
+                              parseInt(selectedCar, 10),
+                              viewMode,
+                              false
+                            );
+                          }
+                        } catch (error) {
+                          console.error('Error clearing typing indicator:', error);
                         }
                       }}
                       placeholder="Type a message..."
