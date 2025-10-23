@@ -21,10 +21,11 @@ import { hapticLight, hapticSuccess, hapticNewMessage, hapticMessageSent, haptic
 import { markMessageDelivered, markMessageRead, handleTypingIndicator, listenToTypingStatus, getMessageStatusDisplay } from '../messageStatusUtils';
 import QueueManager from './QueueManager';
 import { Capacitor } from '@capacitor/core';
+import { navigationLogger, messagesLogger, markersLogger, etaLogger, routeLogger, locationLogger } from '../logger';
 
 // Memoized map component to prevent re-renders
 const StableMap = memo(({ initialCenter, onMapLoad, mapOptions, mapContainerStyle }) => {
-  console.log('🗺️ StableMap rendering');
+  navigationLogger.debug('🗺️ StableMap rendering');
   return (
     <GoogleMap
       mapContainerStyle={mapContainerStyle}
@@ -263,17 +264,17 @@ const CouchNavigator = () => {
     if (savedCar) {
       setSelectedCar(savedCar);
       setCarNumber(savedCar);
-      console.log('Restored car selection:', savedCar);
+      navigationLogger.log('Restored car selection:', savedCar);
     }
     
     if (savedLocationEnabled && savedCar) {
       setLocationEnabled(true);
-      console.log('Restored location enabled state - will auto-resume tracking');
+      navigationLogger.log('Restored location enabled state - will auto-resume tracking');
     }
     
     if (savedViewMode) {
       setViewMode(savedViewMode);
-      console.log('Restored view mode:', savedViewMode);
+      navigationLogger.log('Restored view mode:', savedViewMode);
     }
   }, []);
 
@@ -294,7 +295,7 @@ const CouchNavigator = () => {
   };
 
   const onMapLoad = (map) => {
-    console.log('🗺️ Map loaded!');
+    navigationLogger.log('🗺️ Map loaded!');
     mapRef.current = map;
     // Don't set center/zoom here - let defaultCenter and defaultZoom handle it
   };
@@ -314,13 +315,13 @@ const CouchNavigator = () => {
 
   const renderRoute = async (pickup, dropoffs, shouldFitBounds = false) => {
     if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.DirectionsService) {
-      console.log('⏭️ Cannot render route - map not ready');
+      routeLogger.log('⏭️ Cannot render route - map not ready');
       return;
     }
 
     // Don't clear route if it's just an update - this prevents flickering
     if (!shouldFitBounds && directionsRendererRef.current) {
-      console.log('⏭️ Route already exists, skipping re-render');
+      routeLogger.log('⏭️ Route already exists, skipping re-render');
       return;
     }
 
@@ -355,7 +356,7 @@ const CouchNavigator = () => {
     try {
       const result = await directionsService.route(request);
       directionsRenderer.setDirections(result);
-      console.log('✅ Route rendered successfully');
+      routeLogger.log('✅ Route rendered successfully');
       
       let totalDuration = 0;
       let totalDistance = 0;
@@ -374,15 +375,15 @@ const CouchNavigator = () => {
         eta: etaDate
       });
 
-      console.log('📍 Route info:', {
+      routeLogger.log('📍 Route info:', {
         duration: totalDuration,
         distance: totalDistance,
         eta: etaDate
       });
-      
+
       // Only fit bounds on initial route load, not on updates
       if (shouldFitBounds) {
-        console.log('🎯 Fitting bounds to route');
+        routeLogger.log('🎯 Fitting bounds to route');
         const bounds = new window.google.maps.LatLngBounds();
         result.routes[0].legs.forEach(leg => {
           bounds.extend(leg.start_location);
@@ -391,7 +392,7 @@ const CouchNavigator = () => {
         mapRef.current.fitBounds(bounds);
       }
     } catch (error) {
-      console.log('⚠️ Route rendering failed (API may need a few minutes to activate):', error.message);
+      routeLogger.warn('⚠️ Route rendering failed (API may need a few minutes to activate):', error.message);
       setRouteInfo(null);
     }
   };
@@ -430,13 +431,13 @@ const CouchNavigator = () => {
         destination: ride.status === 'pending' ? 'Pickup' : 'Dropoff'
       });
 
-      console.log('🕐 ETA calculated:', {
+      etaLogger.log('🕐 ETA calculated:', {
         durationText: leg.duration.text,
         distanceText: leg.distance.text,
         eta: etaDate.toLocaleTimeString()
       });
     } catch (error) {
-      console.log('⚠️ ETA calculation failed:', error.message);
+      etaLogger.log('⚠️ ETA calculation failed:', error.message);
       setEta(null);
     }
   };
@@ -623,7 +624,7 @@ const CouchNavigator = () => {
     const isNewRoute = lastRenderedRouteRef.current !== routeKey;
     
     if (isNewRoute) {
-      console.log('🛣️ Rendering new route');
+      routeLogger.log('🛣️ Rendering new route');
       renderRoute(ride.pickup, ride.dropoffs, true);
       lastRenderedRouteRef.current = routeKey;
     }
@@ -631,7 +632,7 @@ const CouchNavigator = () => {
 
   // MODIFIED: Update markers smoothly without recreating
   useEffect(() => {
-    console.log('🗺️ Marker update triggered:', {
+    markersLogger.debug('🗺️ Marker update triggered:', {
       hasMap: !!mapRef.current,
       googleMapsLoaded,
       selectedCar,
@@ -640,7 +641,7 @@ const CouchNavigator = () => {
     });
 
     if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.Marker) {
-      console.log('⏭️ Not ready yet');
+      markersLogger.debug('⏭️ Not ready yet');
       return;
     }
 
@@ -658,7 +659,7 @@ const CouchNavigator = () => {
               lat: location.latitude,
               lng: location.longitude
             });
-            console.log(`✅ Updated marker position for car ${selectedCar}`);
+            markersLogger.log(`✅ Updated marker position for car ${selectedCar}`);
           } else {
             // Create new marker
             const marker = new window.google.maps.Marker({
@@ -685,7 +686,7 @@ const CouchNavigator = () => {
             });
 
             markersRef.current[selectedCar] = marker;
-            console.log(`✅ Marker created for car ${selectedCar}`);
+            markersLogger.log(`✅ Marker created for car ${selectedCar}`);
             
             // Only center on initial marker creation
             centerMapOnCar(selectedCar);
@@ -706,7 +707,7 @@ const CouchNavigator = () => {
               lat: location.latitude,
               lng: location.longitude
             });
-            console.log(`✅ Updated marker position for car ${selectedCar} (couch view)`);
+            markersLogger.log(`✅ Updated marker position for car ${selectedCar} (couch view)`);
           } else {
             const marker = new window.google.maps.Marker({
               map: mapRef.current,
@@ -732,7 +733,7 @@ const CouchNavigator = () => {
             });
 
             markersRef.current[selectedCar] = marker;
-            console.log(`✅ Marker created for car ${selectedCar} (couch view)`);
+            markersLogger.log(`✅ Marker created for car ${selectedCar} (couch view)`);
             
             // Only center on initial marker creation
             centerMapOnCar(selectedCar);
@@ -787,7 +788,7 @@ const CouchNavigator = () => {
       });
     }
 
-    console.log('✅ Total markers now:', Object.keys(markersRef.current).length);
+    markersLogger.log('✅ Total markers now:', Object.keys(markersRef.current).length);
   }, [carLocations, googleMapsLoaded, selectedCar, viewMode]);
 
   // Save state to localStorage when it changes
@@ -848,11 +849,11 @@ const CouchNavigator = () => {
 
   useEffect(() => {
     if (!activeNDR) {
-      console.log('⏭️ No active NDR, skipping car load');
+      navigationLogger.log('⏭️ No active NDR, skipping car load');
       return;
     }
 
-    console.log('🚗 Loading cars for NDR:', activeNDR.id);
+    navigationLogger.log('🚗 Loading cars for NDR:', activeNDR.id);
 
     const loadCars = async () => {
       try {
@@ -937,12 +938,12 @@ const CouchNavigator = () => {
 
   useEffect(() => {
     if (!activeNDR || !selectedCar) {
-      console.log('Message listener not active');
+      messagesLogger.log('Message listener not active');
       return;
     }
 
     const carNum = parseInt(selectedCar, 10);
-    console.log(`📨 Setting up message listener for car ${carNum}`);
+    messagesLogger.log(`📨 Setting up message listener for car ${carNum}`);
 
     const messagesQuery = query(
       collection(db, 'couchMessages'),
@@ -968,7 +969,7 @@ const CouchNavigator = () => {
           };
         });
 
-        console.log(`📬 Received ${msgs.length} messages for car ${carNum}`);
+        messagesLogger.log(`📬 Received ${msgs.length} messages for car ${carNum}`);
         setMessages(msgs);
 
         if (msgs.length > lastMessageCountRef.current && lastMessageCountRef.current > 0) {
@@ -983,29 +984,37 @@ const CouchNavigator = () => {
               // Mark message as delivered
               if (latestMessage.id) {
                 markMessageDelivered(latestMessage.id).catch(err => {
-                  console.error('Failed to mark message as delivered:', err);
+                  messagesLogger.error('Failed to mark message as delivered:', err);
                 });
               }
             } catch (error) {
-              console.error('Error processing new message notification:', error);
+              messagesLogger.error('Error processing new message notification:', error);
             }
           }
         }
 
-        // Mark all received messages as read (they're visible in the chat)
-        msgs.forEach(msg => {
-          try {
-            const isReceivedMessage = (viewMode === 'navigator' && msg.sender === 'couch') ||
-                                       (viewMode === 'couch' && msg.sender === 'navigator');
-            if (isReceivedMessage && !msg.readAt && msg.id) {
-              markMessageRead(msg.id).catch(err => {
-                console.error('Failed to mark message as read:', err);
-              });
+        // Mark received messages as read only on first snapshot or if message count increased
+        // This prevents infinite loops from marking messages as read
+        if (snapshot.docChanges().length > 0) {
+          const newOrModifiedMsgs = snapshot.docChanges()
+            .filter(change => change.type === 'added')
+            .map(change => change.doc.id);
+
+          msgs.forEach(msg => {
+            try {
+              const isReceivedMessage = (viewMode === 'navigator' && msg.sender === 'couch') ||
+                                         (viewMode === 'couch' && msg.sender === 'navigator');
+              // Only mark as read if it's a new message (just added) and not already read
+              if (isReceivedMessage && !msg.readAt && msg.id && newOrModifiedMsgs.includes(msg.id)) {
+                markMessageRead(msg.id).catch(err => {
+                  messagesLogger.error('Failed to mark message as read:', err);
+                });
+              }
+            } catch (error) {
+              messagesLogger.error('Error marking message as read:', error);
             }
-          } catch (error) {
-            console.error('Error marking message as read:', error);
-          }
-        });
+          });
+        }
 
         lastMessageCountRef.current = msgs.length;
       },
@@ -1231,11 +1240,11 @@ const CouchNavigator = () => {
 
   useEffect(() => {
     if (viewMode !== 'navigator' || !locationEnabled || !selectedCar || !activeNDR) {
-      console.log('Location tracking inactive');
+      locationLogger.log('Location tracking inactive');
       return;
     }
 
-    console.log('🎯 Starting location tracking...');
+    locationLogger.log('🎯 Starting location tracking...');
 
     const handleError = (error) => {
       console.error('Location error:', error);

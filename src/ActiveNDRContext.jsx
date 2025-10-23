@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { db } from './firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { ndrLogger } from './logger';
 
 const ActiveNDRContext = createContext();
 
@@ -22,11 +23,11 @@ export const ActiveNDRProvider = ({ children }) => {
   useEffect(() => {
     // Only set up listener after auth is ready
     if (currentUser === undefined) {
-      console.log('[ActiveNDR] Waiting for auth...');
+      ndrLogger.log('[ActiveNDR] Waiting for auth...');
       return;
     }
 
-    console.log('[ActiveNDR] Setting up listener...');
+    ndrLogger.log('[ActiveNDR] Setting up listener...');
     setLoading(true);
     
     const ndrsRef = collection(db, 'ndrs');
@@ -40,7 +41,7 @@ export const ActiveNDRProvider = ({ children }) => {
       },
       (snapshot) => {
         // Log for debugging
-        console.log('[ActiveNDR] Snapshot received:', {
+        ndrLogger.log('[ActiveNDR] Snapshot received:', {
           empty: snapshot.empty,
           size: snapshot.size,
           fromCache: snapshot.metadata.fromCache,
@@ -50,7 +51,7 @@ export const ActiveNDRProvider = ({ children }) => {
         // Only update state if this is from server or a real change
         if (!snapshot.metadata.hasPendingWrites) {
           if (snapshot.empty) {
-            console.log('[ActiveNDR] No active NDR found');
+            ndrLogger.log('[ActiveNDR] No active NDR found');
             setActiveNDR(null);
             setError(null);
           } else {
@@ -62,7 +63,7 @@ export const ActiveNDRProvider = ({ children }) => {
               activatedAt: doc.data().activatedAt?.toDate(),
               endedAt: doc.data().endedAt?.toDate()
             };
-            console.log('[ActiveNDR] Active NDR found:', ndr.id, ndr.eventName);
+            ndrLogger.log('[ActiveNDR] Active NDR found:', ndr.id, ndr.eventName);
             setActiveNDR(ndr);
             setError(null);
           }
@@ -78,7 +79,7 @@ export const ActiveNDRProvider = ({ children }) => {
     );
 
     return () => {
-      console.log('[ActiveNDR] Cleaning up listener');
+      ndrLogger.log('[ActiveNDR] Cleaning up listener');
       unsubscribe();
     };
   }, [currentUser]);

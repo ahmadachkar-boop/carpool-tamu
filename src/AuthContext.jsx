@@ -1,12 +1,13 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from './firebase';
-import { 
-  signInWithEmailAndPassword, 
-  signOut, 
+import {
+  signInWithEmailAndPassword,
+  signOut,
   onAuthStateChanged,
-  createUserWithEmailAndPassword 
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { authLogger } from './logger';
 
 const AuthContext = createContext();
 
@@ -67,10 +68,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    console.log('[Auth] Setting up auth listener...');
+    authLogger.log('[Auth] Setting up auth listener...');
     
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('[Auth] Auth state changed:', user ? `User ${user.uid}` : 'No user');
+      authLogger.log('[Auth] Auth state changed:', user ? `User ${user.uid}` : 'No user');
       
       setCurrentUser(user);
       
@@ -84,10 +85,10 @@ export const AuthProvider = ({ children }) => {
               id: user.uid,
               ...docSnap.data()
             };
-            console.log('[Auth] User profile updated:', profile.name, 'tempPassword:', profile.tempPassword, 'profileCompleted:', profile.profileCompleted);
+            authLogger.log('[Auth] User profile updated:', profile.name, 'tempPassword:', profile.tempPassword, 'profileCompleted:', profile.profileCompleted);
             setUserProfile(profile);
           } else {
-            console.log('[Auth] No user profile found in Firestore');
+            authLogger.log('[Auth] No user profile found in Firestore');
             setUserProfile(null);
           }
         }, (error) => {
@@ -99,7 +100,7 @@ export const AuthProvider = ({ children }) => {
         
         // Return cleanup function for profile listener
         return () => {
-          console.log('[Auth] Cleaning up profile listener');
+          authLogger.log('[Auth] Cleaning up profile listener');
           unsubscribeProfile();
         };
       } else {
@@ -109,7 +110,7 @@ export const AuthProvider = ({ children }) => {
     });
 
     return () => {
-      console.log('[Auth] Cleaning up auth listener');
+      authLogger.log('[Auth] Cleaning up auth listener');
       unsubscribe();
     };
   }, []);

@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { hapticsLogger } from './logger';
 
 // NOTE: To enable full haptic support, install the Haptics plugin:
 // npm install @capacitor/haptics
@@ -17,7 +18,7 @@ try {
   ImpactStyle = hapticModule.ImpactStyle;
   NotificationType = hapticModule.NotificationType;
 } catch (error) {
-  console.log('📳 Haptics plugin not installed, using fallback vibration');
+  hapticsLogger.log('📳 Haptics plugin not installed, using fallback vibration');
 }
 
 export const isNativeApp = Capacitor.isNativePlatform();
@@ -39,7 +40,7 @@ export const hapticLight = async () => {
     try {
       await Haptics.impact({ style: ImpactStyle.Light });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate(10); // 10ms vibration
@@ -52,7 +53,7 @@ export const hapticMedium = async () => {
     try {
       await Haptics.impact({ style: ImpactStyle.Medium });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate(20); // 20ms vibration
@@ -65,7 +66,7 @@ export const hapticHeavy = async () => {
     try {
       await Haptics.impact({ style: ImpactStyle.Heavy });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate(50); // 50ms vibration
@@ -78,7 +79,7 @@ export const hapticSuccess = async () => {
     try {
       await Haptics.notification({ type: NotificationType.Success });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     // Pattern: short-short for success
@@ -92,7 +93,7 @@ export const hapticWarning = async () => {
     try {
       await Haptics.notification({ type: NotificationType.Warning });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     // Pattern: medium-medium for warning
@@ -106,7 +107,7 @@ export const hapticError = async () => {
     try {
       await Haptics.notification({ type: NotificationType.Error });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     // Pattern: long vibration for error
@@ -125,7 +126,7 @@ export const hapticSelection = async () => {
       await new Promise(resolve => setTimeout(resolve, 50));
       await Haptics.selectionEnd();
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate(5); // Very light tap
@@ -141,7 +142,7 @@ export const hapticNewMessage = async () => {
       await new Promise(resolve => setTimeout(resolve, 100));
       await Haptics.impact({ style: ImpactStyle.Light });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     // Pattern: short-pause-short
@@ -155,7 +156,7 @@ export const hapticMessageSent = async () => {
     try {
       await Haptics.notification({ type: NotificationType.Success });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate(15);
@@ -169,7 +170,7 @@ export const hapticLocationEnabled = async () => {
       // Success pattern
       await Haptics.notification({ type: NotificationType.Success });
     } catch (error) {
-      console.log('Haptic not available:', error);
+      hapticsLogger.log('Haptic not available:', error);
     }
   } else if ('vibrate' in navigator) {
     navigator.vibrate([10, 50, 10, 50, 10]);

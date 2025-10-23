@@ -1,4 +1,5 @@
 // Offline Queue Management and Connection Status
+import { offlineLogger } from './logger';
 
 const MESSAGE_QUEUE_KEY = 'couchNav_messageQueue';
 const LOCATION_CACHE_KEY = 'couchNav_lastLocation';
@@ -13,7 +14,7 @@ export const queueMessage = (messageData) => {
       id: `queued_${Date.now()}_${Math.random()}`
     });
     localStorage.setItem(MESSAGE_QUEUE_KEY, JSON.stringify(queue));
-    console.log('📦 Message queued for offline sync:', messageData);
+    offlineLogger.log('📦 Message queued for offline sync:', messageData);
     return true;
   } catch (error) {
     console.error('❌ Error queuing message:', error);
@@ -34,7 +35,7 @@ export const getMessageQueue = () => {
 export const clearMessageQueue = () => {
   try {
     localStorage.removeItem(MESSAGE_QUEUE_KEY);
-    console.log('✅ Message queue cleared');
+    offlineLogger.log('✅ Message queue cleared');
   } catch (error) {
     console.error('❌ Error clearing queue:', error);
   }
@@ -45,7 +46,7 @@ export const removeQueuedMessage = (messageId) => {
     const queue = getMessageQueue();
     const filtered = queue.filter(msg => msg.id !== messageId);
     localStorage.setItem(MESSAGE_QUEUE_KEY, JSON.stringify(filtered));
-    console.log('✅ Removed message from queue:', messageId);
+    offlineLogger.log('✅ Removed message from queue:', messageId);
   } catch (error) {
     console.error('❌ Error removing queued message:', error);
   }
@@ -59,7 +60,7 @@ export const cacheLocation = (locationData) => {
       cachedAt: Date.now()
     };
     localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(cached));
-    console.log('💾 Location cached:', locationData);
+    offlineLogger.log('💾 Location cached:', locationData);
     return true;
   } catch (error) {
     console.error('❌ Error caching location:', error);
@@ -79,12 +80,12 @@ export const getCachedLocation = () => {
     const MAX_CACHE_AGE = 5 * 60 * 1000; // 5 minutes
 
     if (age > MAX_CACHE_AGE) {
-      console.log('⚠️ Cached location too old, discarding');
+      offlineLogger.log('⚠️ Cached location too old, discarding');
       localStorage.removeItem(LOCATION_CACHE_KEY);
       return null;
     }
 
-    console.log('📍 Using cached location:', location);
+    offlineLogger.log('📍 Using cached location:', location);
     return location;
   } catch (error) {
     console.error('❌ Error reading cached location:', error);
@@ -95,7 +96,7 @@ export const getCachedLocation = () => {
 export const clearLocationCache = () => {
   try {
     localStorage.removeItem(LOCATION_CACHE_KEY);
-    console.log('✅ Location cache cleared');
+    offlineLogger.log('✅ Location cache cleared');
   } catch (error) {
     console.error('❌ Error clearing location cache:', error);
   }
@@ -150,14 +151,14 @@ const initializeConnectionMonitoring = () => {
   const handleOnline = () => {
     isOnline = true;
     lastOnlineCheck = Date.now();
-    console.log('🟢 Connection restored');
+    offlineLogger.log('🟢 Connection restored');
     connectionListeners.forEach(callback => callback(true));
   };
 
   const handleOffline = () => {
     isOnline = false;
     lastOnlineCheck = Date.now();
-    console.log('🔴 Connection lost');
+    offlineLogger.log('🔴 Connection lost');
     connectionListeners.forEach(callback => callback(false));
   };
 
@@ -188,7 +189,7 @@ let firestoreListeners = [];
 export const setFirestoreConnected = (connected) => {
   if (firestoreConnected !== connected) {
     firestoreConnected = connected;
-    console.log(`🔥 Firestore ${connected ? 'connected' : 'disconnected'}`);
+    offlineLogger.log(`🔥 Firestore ${connected ? 'connected' : 'disconnected'}`);
     firestoreListeners.forEach(callback => callback(connected));
   }
 };
@@ -226,28 +227,28 @@ let isSyncing = false;
 
 export const setSyncCallback = (callback) => {
   syncCallback = callback;
-  console.log('✅ Auto-sync callback registered');
+  offlineLogger.log('✅ Auto-sync callback registered');
 };
 
 export const syncQueuedMessages = async (sendFunction) => {
   if (isSyncing) {
-    console.log('⏸️ Sync already in progress');
+    offlineLogger.log('⏸️ Sync already in progress');
     return { success: false, reason: 'already_syncing' };
   }
 
   if (!isOnline || !firestoreConnected) {
-    console.log('⏸️ Cannot sync - offline or Firestore disconnected');
+    offlineLogger.log('⏸️ Cannot sync - offline or Firestore disconnected');
     return { success: false, reason: 'offline' };
   }
 
   const queue = getMessageQueue();
   if (queue.length === 0) {
-    console.log('✅ No messages to sync');
+    offlineLogger.log('✅ No messages to sync');
     return { success: true, synced: 0 };
   }
 
   isSyncing = true;
-  console.log(`🔄 Starting sync of ${queue.length} queued messages...`);
+  offlineLogger.log(`🔄 Starting sync of ${queue.length} queued messages...`);
 
   const results = {
     success: 0,
@@ -264,7 +265,7 @@ export const syncQueuedMessages = async (sendFunction) => {
       removeQueuedMessage(queuedMessage.id);
       results.success++;
 
-      console.log(`✅ Synced message: ${queuedMessage.message.substring(0, 30)}...`);
+      offlineLogger.log(`✅ Synced message: ${queuedMessage.message.substring(0, 30)}...`);
     } catch (error) {
       console.error(`❌ Failed to sync message:`, error);
       results.failed++;
@@ -283,7 +284,7 @@ export const syncQueuedMessages = async (sendFunction) => {
 
   isSyncing = false;
 
-  console.log(`🔄 Sync complete: ${results.success} sent, ${results.failed} failed`);
+  offlineLogger.log(`🔄 Sync complete: ${results.success} sent, ${results.failed} failed`);
 
   return {
     success: true,
@@ -311,14 +312,14 @@ export const addAppResumeListener = (callback) => {
 
 const handleVisibilityChange = () => {
   if (!document.hidden) {
-    console.log('📱 App resumed from background');
+    offlineLogger.log('📱 App resumed from background');
     appResumeListeners.forEach(callback => callback());
 
     // Trigger sync callback if registered and online
     if (syncCallback && isOnline && firestoreConnected) {
       const queue = getMessageQueue();
       if (queue.length > 0) {
-        console.log('🔄 Auto-triggering sync after app resume');
+        offlineLogger.log('🔄 Auto-triggering sync after app resume');
         syncCallback();
       }
     }

@@ -2,6 +2,7 @@
 
 import { doc, updateDoc, setDoc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { messagesLogger } from './logger';
 
 // Message Status Constants
 export const MESSAGE_STATUS = {
@@ -23,10 +24,10 @@ export const markMessageDelivered = async (messageId) => {
       deliveredAt: serverTimestamp(),
       status: MESSAGE_STATUS.DELIVERED
     });
-    console.log('✅ Message marked as delivered:', messageId);
+    messagesLogger.log('✅ Message marked as delivered:', messageId);
   } catch (error) {
     // If the document doesn't have status field yet, that's okay
-    console.log('Note: Could not mark message as delivered:', error.message);
+    messagesLogger.log('Note: Could not mark message as delivered:', error.message);
   }
 };
 
@@ -43,9 +44,9 @@ export const markMessageRead = async (messageId) => {
       readAt: serverTimestamp(),
       status: MESSAGE_STATUS.READ
     });
-    console.log('✅ Message marked as read:', messageId);
+    messagesLogger.log('✅ Message marked as read:', messageId);
   } catch (error) {
-    console.log('Note: Could not mark message as read:', error.message);
+    messagesLogger.log('Note: Could not mark message as read:', error.message);
   }
 };
 

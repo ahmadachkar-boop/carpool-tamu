@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
+import { firebaseLogger } from './logger';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBI87gFec1mUSEYTqST5C_fQ2b5CGchC3A",
@@ -18,13 +19,13 @@ const app = initializeApp(firebaseConfig);
 let auth;
 if (Capacitor.isNativePlatform()) {
   // Native platform (iOS/Android) - use initializeAuth to avoid popup/redirect issues
-  console.log('🔧 Initializing Firebase Auth for Native platform');
+  firebaseLogger.log('🔧 Initializing Firebase Auth for Native platform');
   auth = initializeAuth(app, {
     persistence: indexedDBLocalPersistence
   });
 } else {
   // Web platform - use standard getAuth
-  console.log('🔧 Initializing Firebase Auth for Web platform');
+  firebaseLogger.log('🔧 Initializing Firebase Auth for Web platform');
   auth = getAuth(app);
 }
 
@@ -36,10 +37,10 @@ try {
       tabManager: persistentSingleTabManager()
     })
   });
-  console.log('✅ Firestore initialized with persistent cache');
+  firebaseLogger.log('✅ Firestore initialized with persistent cache');
 } catch (error) {
   // Fallback if already initialized
-  console.log('⚠️ Firestore already initialized, using existing instance');
+  firebaseLogger.log('⚠️ Firestore already initialized, using existing instance');
   db = getFirestore(app);
 }
 
