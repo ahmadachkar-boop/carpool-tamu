@@ -232,6 +232,7 @@ const CouchNavigator = () => {
   const routePolylineRef = useRef(null);
   const lastRenderedRouteRef = useRef(null);
   const initialMapCenterRef = useRef(null);
+  const isMountedRef = useRef(true); // Track component mount status
 
   const [platformInfo, setPlatformInfo] = useState({
     isIOS: false,
@@ -502,6 +503,14 @@ const CouchNavigator = () => {
       capacitorPlatform: Capacitor.getPlatform(),
       capacitorNative: Capacitor.isNativePlatform()
     });
+  }, []);
+
+  // Track component mount status to prevent operations after unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   // Connection status monitoring
@@ -982,7 +991,7 @@ const CouchNavigator = () => {
               hapticNewMessage(); // Haptic feedback for new message
 
               // Mark message as delivered
-              if (latestMessage.id) {
+              if (latestMessage.id && isMountedRef.current) {
                 markMessageDelivered(latestMessage.id).catch(err => {
                   messagesLogger.error('Failed to mark message as delivered:', err);
                 });
@@ -1006,9 +1015,12 @@ const CouchNavigator = () => {
                                          (viewMode === 'couch' && msg.sender === 'navigator');
               // Only mark as read if it's a new message (just added) and not already read
               if (isReceivedMessage && !msg.readAt && msg.id && newOrModifiedMsgs.includes(msg.id)) {
-                markMessageRead(msg.id).catch(err => {
-                  messagesLogger.error('Failed to mark message as read:', err);
-                });
+                // Check if component is still mounted before initiating async operation
+                if (isMountedRef.current) {
+                  markMessageRead(msg.id).catch(err => {
+                    messagesLogger.error('Failed to mark message as read:', err);
+                  });
+                }
               }
             } catch (error) {
               messagesLogger.error('Error marking message as read:', error);

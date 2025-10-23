@@ -20,13 +20,33 @@ export const markMessageDelivered = async (messageId) => {
 
   try {
     const messageRef = doc(db, 'couchMessages', messageId);
+
+    // Check if document exists before trying to update
+    const docSnap = await getDoc(messageRef);
+    if (!docSnap.exists()) {
+      messagesLogger.log('⏭️ Message does not exist, skipping delivery status update:', messageId);
+      return;
+    }
+
+    // Only update if not already delivered
+    const data = docSnap.data();
+    if (data.deliveredAt) {
+      messagesLogger.log('⏭️ Message already marked as delivered:', messageId);
+      return;
+    }
+
     await updateDoc(messageRef, {
       deliveredAt: serverTimestamp(),
       status: MESSAGE_STATUS.DELIVERED
     });
     messagesLogger.log('✅ Message marked as delivered:', messageId);
   } catch (error) {
-    // If the document doesn't have status field yet, that's okay
+    // Silently handle permission denied and not found errors
+    if (error.code === 'permission-denied' || error.code === 'not-found') {
+      messagesLogger.log('⏭️ Skipping delivery status (permission/not-found):', messageId);
+      return;
+    }
+    // Log other errors but don't throw
     messagesLogger.log('Note: Could not mark message as delivered:', error.message);
   }
 };
@@ -40,12 +60,33 @@ export const markMessageRead = async (messageId) => {
 
   try {
     const messageRef = doc(db, 'couchMessages', messageId);
+
+    // Check if document exists before trying to update
+    const docSnap = await getDoc(messageRef);
+    if (!docSnap.exists()) {
+      messagesLogger.log('⏭️ Message does not exist, skipping read status update:', messageId);
+      return;
+    }
+
+    // Only update if not already read
+    const data = docSnap.data();
+    if (data.readAt) {
+      messagesLogger.log('⏭️ Message already marked as read:', messageId);
+      return;
+    }
+
     await updateDoc(messageRef, {
       readAt: serverTimestamp(),
       status: MESSAGE_STATUS.READ
     });
     messagesLogger.log('✅ Message marked as read:', messageId);
   } catch (error) {
+    // Silently handle permission denied and not found errors
+    if (error.code === 'permission-denied' || error.code === 'not-found') {
+      messagesLogger.log('⏭️ Skipping read status (permission/not-found):', messageId);
+      return;
+    }
+    // Log other errors but don't throw
     messagesLogger.log('Note: Could not mark message as read:', error.message);
   }
 };
