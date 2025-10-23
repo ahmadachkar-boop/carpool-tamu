@@ -30,6 +30,9 @@ if (Capacitor.isNativePlatform()) {
 }
 
 // Initialize Firestore with new cache API (works on both platforms)
+// Note: persistentSingleTabManager() may cause WebChannel termination errors in dev mode
+// with React StrictMode due to rapid component mounting/unmounting. These errors are
+// suppressed by consoleFilter.js and are benign.
 let db;
 try {
   db = initializeFirestore(app, {

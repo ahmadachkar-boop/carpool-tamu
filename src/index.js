@@ -4,6 +4,8 @@ import { HashRouter } from 'react-router-dom';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+// Import console filter to suppress Firebase WebChannel spam errors
+import './consoleFilter';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
