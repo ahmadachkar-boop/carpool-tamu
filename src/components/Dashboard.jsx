@@ -233,7 +233,7 @@ const Dashboard = () => {
           {activeNDR && (
             <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-[#79F200] to-[#5bc000] rounded-2xl blur-lg opacity-30 group-hover:opacity-50 transition"></div>
-              <div className="relative bg-gradient-to-r from-[#79F200] to-[#5bc000] px-6 py-3 rounded-2xl shadow-xl">
+              <div className="relative bg-gradient-to-r from-[#79F200] to-[#79F200] px-6 py-3 rounded-2xl shadow-xl">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-gray-900 rounded-full animate-pulse"></div>
                   <p className="text-sm font-bold text-gray-900">LIVE</p>
