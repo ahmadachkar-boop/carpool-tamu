@@ -40,9 +40,10 @@ export const initializeFCM = async () => {
 /**
  * Request notification permissions and get FCM token for web
  * @param {string} userId - User ID to associate token with
+ * @param {boolean} permissionAlreadyGranted - Skip permission request if already granted
  * @returns {Promise<string|null>} FCM token or null
  */
-export const requestFCMToken = async (userId) => {
+export const requestFCMToken = async (userId, permissionAlreadyGranted = false) => {
   if (isNativeApp) {
     console.log('📱 Using native push notifications - skipping FCM token');
     return null;
@@ -52,10 +53,18 @@ export const requestFCMToken = async (userId) => {
     const messaging = await initializeFCM();
     if (!messaging) return null;
 
-    // Request permission
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      console.log('❌ Notification permission denied');
+    // Request permission only if not already granted
+    if (!permissionAlreadyGranted) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.log('❌ Notification permission denied');
+        return null;
+      }
+    }
+
+    // Verify permission is actually granted
+    if (Notification.permission !== 'granted') {
+      console.log('❌ Notification permission not granted');
       return null;
     }
 
