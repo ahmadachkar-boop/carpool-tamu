@@ -75,6 +75,27 @@ post_install do |installer|
     end
   end
 
-  # Save the modified project
+  # CRITICAL: Also clean up the App.xcodeproj to remove privacy bundle references
+  app_project = Xcodeproj::Project.open('App.xcodeproj')
+  app_project.targets.each do |target|
+    if target.name == 'App'
+      target.build_phases.each do |build_phase|
+        if build_phase.respond_to?(:files)
+          build_phase.files.delete_if do |file|
+            file_ref = file.file_ref
+            if file_ref && file_ref.respond_to?(:path)
+              path = file_ref.path
+              path&.include?('_Privacy.bundle') || path&.include?('-Privacy.bundle')
+            else
+              false
+            end
+          end
+        end
+      end
+    end
+  end
+  app_project.save
+
+  # Save the modified Pods project
   installer.pods_project.save
 end
