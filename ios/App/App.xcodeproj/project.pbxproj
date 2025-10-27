@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		16E9A0092EAFFD0C00E33744 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 16E9A0082EAFFD0C00E33744 /* GoogleService-Info.plist */; };
 		16FAB0BE2EA81C260037283F /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBC6050B9AA4FF7812A0DCA7 /* Pods_App.framework */; };
 		16FAB1182EA81CC40037283F /* Capacitor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10D2EA81CBD0037283F /* Capacitor.framework */; };
 		16FAB1192EA81CC40037283F /* Capacitor.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 16FAB10D2EA81CBD0037283F /* Capacitor.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -96,7 +95,6 @@
 
 /* Begin PBXFileReference section */
 		167A3BA32EAFA95000DB4861 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
-		16E9A0082EAFFD0C00E33744 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		16FAB0B82EA81BA10037283F /* Capacitor.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = Capacitor.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		16FAB0C22EA81CBD0037283F /* IONGeolocationLib.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = IONGeolocationLib.xcframework; sourceTree = "<group>"; };
 		16FAB0C32EA81CBD0037283F /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -376,7 +374,6 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
-				16E9A0082EAFFD0C00E33744 /* GoogleService-Info.plist */,
 				167A3BA32EAFA95000DB4861 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -519,7 +516,6 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
-				16E9A0092EAFFD0C00E33744 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
