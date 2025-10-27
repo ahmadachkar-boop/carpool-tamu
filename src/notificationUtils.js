@@ -77,14 +77,17 @@ export const showNotification = async (title, body) => {
         console.log('No previous notification to cancel');
       }
 
-      // For immediate notifications on iOS/Android, use schedule with current time
+      // For immediate notifications on iOS/Android, use schedule slightly in the future
       // Using a CONSISTENT ID ensures this replaces any previous notification
+      // Schedule 100ms in the future to avoid "Scheduled time must be *after* current time" error
+      const scheduleTime = new Date(Date.now() + 100);
+
       await LocalNotifications.schedule({
         notifications: [{
           title,
           body,
           id: NOTIFICATION_ID, // ✅ Fixed ID - replaces previous notification
-          schedule: { at: new Date() }, // Trigger immediately
+          schedule: { at: scheduleTime }, // Schedule 100ms in future
           sound: 'default',
           smallIcon: 'ic_stat_icon_config_sample',
           iconColor: '#79F200',
@@ -99,15 +102,18 @@ export const showNotification = async (title, body) => {
     } catch (error) {
       console.error('❌ Error showing native notification:', error);
 
-      // Fallback: try showing without scheduling (some platforms support this)
+      // Fallback: try with longer delay
       try {
+        const fallbackTime = new Date(Date.now() + 500); // 500ms delay
         await LocalNotifications.schedule({
           notifications: [{
             title,
             body,
-            id: NOTIFICATION_ID
+            id: NOTIFICATION_ID,
+            schedule: { at: fallbackTime }
           }]
         });
+        console.log('✅ Fallback notification scheduled');
       } catch (fallbackError) {
         console.error('❌ Fallback notification also failed:', fallbackError);
       }
