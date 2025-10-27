@@ -530,23 +530,31 @@ const CouchNavigator = () => {
           console.log('✅ Native push notifications initialized');
         } else {
           // Initialize web FCM
-          const messaging = await initializeFCM();
-          if (messaging) {
-            // Setup foreground message listener
-            foregroundUnsubscribe = await setupForegroundMessageListener((payload) => {
-              console.log('📨 Foreground FCM message:', payload);
-              // Show notification when app is in foreground
-              const title = payload.notification?.title || 'New Message';
-              const body = payload.notification?.body || '';
-              showNotification(title, body);
-              playNotificationSound();
-              hapticNewMessage();
-            });
-            console.log('✅ FCM foreground listener setup');
+          try {
+            const messaging = await initializeFCM();
+            if (messaging) {
+              // Setup foreground message listener
+              foregroundUnsubscribe = await setupForegroundMessageListener((payload) => {
+                console.log('📨 Foreground FCM message:', payload);
+                // Show notification when app is in foreground
+                const title = payload.notification?.title || 'New Message';
+                const body = payload.notification?.body || '';
+                showNotification(title, body);
+                playNotificationSound();
+                hapticNewMessage();
+              });
+              console.log('✅ FCM foreground listener setup');
+            } else {
+              console.log('⚠️ FCM not initialized - web push notifications disabled (this is OK for development)');
+            }
+          } catch (fcmError) {
+            console.log('⚠️ FCM initialization failed - continuing without web push:', fcmError.message);
+            // Don't throw - allow app to continue functioning
           }
         }
       } catch (error) {
-        console.error('❌ Error setting up push notifications:', error);
+        console.error('❌ Error setting up push notifications (non-critical):', error);
+        // Don't throw - messaging should still work via Firestore listener
       }
     };
 
