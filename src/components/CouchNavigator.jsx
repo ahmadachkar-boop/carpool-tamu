@@ -19,6 +19,7 @@ import { requestNotificationPermission, showNotification, playNotificationSound,
 import { queueMessage, getMessageQueue, removeQueuedMessage, cacheLocation, getCachedLocation, addConnectionListener, isConnected, addFirestoreConnectionListener, setFirestoreConnected, getSyncStatus, syncQueuedMessages, isSyncInProgress, setSyncCallback, addAppResumeListener } from '../offlineUtils';
 import { hapticLight, hapticSuccess, hapticNewMessage, hapticMessageSent, hapticLocationEnabled, hapticError } from '../hapticUtils';
 import { markMessageDelivered, markMessageRead, handleTypingIndicator, listenToTypingStatus, getMessageStatusDisplay } from '../messageStatusUtils';
+import { initializeFCM, requestFCMToken, setupForegroundMessageListener, initializeNativePushNotifications, cleanupNativePushNotifications } from '../fcmUtils';
 import QueueManager from './QueueManager';
 import { Capacitor } from '@capacitor/core';
 import { navigationLogger, messagesLogger, markersLogger, etaLogger, routeLogger, locationLogger } from '../logger';
@@ -220,6 +221,7 @@ const CouchNavigator = () => {
 
   // Typing indicator state
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [googleMapsMarkerReady, setGoogleMapsMarkerReady] = useState(false);
 
   const messagesEndRef = useRef(null);
   const locationWatchId = useRef(null);
@@ -233,6 +235,7 @@ const CouchNavigator = () => {
   const lastRenderedRouteRef = useRef(null);
   const initialMapCenterRef = useRef(null);
   const isMountedRef = useRef(true); // Track component mount status
+  const lastNotifiedMessageIdRef = useRef(null); // Track last notified message to prevent duplicates
 
   const [platformInfo, setPlatformInfo] = useState({
     isIOS: false,
@@ -295,10 +298,18 @@ const CouchNavigator = () => {
     gestureHandling: 'greedy'
   };
 
+  // Default map center (Texas A&M campus) as fallback
+  const DEFAULT_MAP_CENTER = { lat: 30.6187, lng: -96.3365 };
+
   const onMapLoad = (map) => {
     navigationLogger.log('🗺️ Map loaded!');
     mapRef.current = map;
     // Don't set center/zoom here - let defaultCenter and defaultZoom handle it
+
+    // Check if Marker API is ready now
+    if (window.google?.maps?.Marker) {
+      setGoogleMapsMarkerReady(true);
+    }
   };
 
   const clearRoute = () => {
@@ -505,6 +516,49 @@ const CouchNavigator = () => {
     });
   }, []);
 
+  // Initialize FCM/Push Notifications
+  useEffect(() => {
+    let foregroundUnsubscribe = null;
+
+    const setupPushNotifications = async () => {
+      if (!userProfile?.uid) return;
+
+      try {
+        if (isNativeApp) {
+          // Initialize native push notifications (iOS/Android with APNs/FCM)
+          await initializeNativePushNotifications(userProfile.uid);
+          console.log('✅ Native push notifications initialized');
+        } else {
+          // Initialize web FCM
+          const messaging = await initializeFCM();
+          if (messaging) {
+            // Setup foreground message listener
+            foregroundUnsubscribe = await setupForegroundMessageListener((payload) => {
+              console.log('📨 Foreground FCM message:', payload);
+              // Show notification when app is in foreground
+              const title = payload.notification?.title || 'New Message';
+              const body = payload.notification?.body || '';
+              showNotification(title, body);
+              playNotificationSound();
+              hapticNewMessage();
+            });
+            console.log('✅ FCM foreground listener setup');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error setting up push notifications:', error);
+      }
+    };
+
+    setupPushNotifications();
+
+    return () => {
+      if (foregroundUnsubscribe) {
+        foregroundUnsubscribe();
+      }
+    };
+  }, [userProfile?.uid]);
+
   // Track component mount status to prevent operations after unmount
   useEffect(() => {
     isMountedRef.current = true;
@@ -512,6 +566,42 @@ const CouchNavigator = () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Poll for Google Maps Marker API readiness (fixes race condition)
+  useEffect(() => {
+    if (googleMapsMarkerReady) return; // Already ready
+
+    const checkMarkerAPI = () => {
+      if (window.google?.maps?.Marker) {
+        markersLogger.log('✅ Google Maps Marker API is now ready');
+        setGoogleMapsMarkerReady(true);
+        return true;
+      }
+      return false;
+    };
+
+    // Check immediately
+    if (checkMarkerAPI()) return;
+
+    // Poll every 100ms until ready (max 5 seconds)
+    const pollInterval = setInterval(() => {
+      if (checkMarkerAPI()) {
+        clearInterval(pollInterval);
+      }
+    }, 100);
+
+    const timeout = setTimeout(() => {
+      clearInterval(pollInterval);
+      if (!googleMapsMarkerReady) {
+        markersLogger.warn('⚠️ Google Maps Marker API not ready after 5 seconds');
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
+    };
+  }, [googleMapsLoaded, googleMapsMarkerReady]);
 
   // Connection status monitoring
   useEffect(() => {
@@ -644,13 +734,14 @@ const CouchNavigator = () => {
     markersLogger.debug('🗺️ Marker update triggered:', {
       hasMap: !!mapRef.current,
       googleMapsLoaded,
+      googleMapsMarkerReady,
       selectedCar,
       viewMode,
       carLocations
     });
 
-    if (!mapRef.current || !googleMapsLoaded || !window.google?.maps?.Marker) {
-      markersLogger.debug('⏭️ Not ready yet');
+    if (!mapRef.current || !googleMapsLoaded || !googleMapsMarkerReady) {
+      markersLogger.debug('⏭️ Not ready yet (map:', !!mapRef.current, 'loaded:', googleMapsLoaded, 'markerReady:', googleMapsMarkerReady, ')');
       return;
     }
 
@@ -754,51 +845,76 @@ const CouchNavigator = () => {
 
       // Route rendering moved to separate useEffect
     } else if (viewMode === 'couch' && !selectedCar) {
-      // Clear all markers and recreate for overview
-      Object.values(markersRef.current).forEach(marker => {
-        if (marker && marker.setMap) {
-          marker.setMap(null);
+      // Optimized overview mode: Update markers instead of recreating
+      const currentCarNumbers = new Set(
+        Object.keys(carLocations).map(key => {
+          const location = carLocations[key];
+          return location.carNumber || parseInt(key, 10);
+        })
+      );
+
+      // Remove markers for cars that no longer have locations
+      Object.keys(markersRef.current).forEach(carNum => {
+        const numericCarNum = parseInt(carNum, 10);
+        if (!currentCarNumbers.has(numericCarNum)) {
+          markersLogger.log(`🗑️ Removing marker for car ${carNum} (no longer in carLocations)`);
+          if (markersRef.current[carNum] && markersRef.current[carNum].setMap) {
+            markersRef.current[carNum].setMap(null);
+          }
+          delete markersRef.current[carNum];
         }
       });
-      markersRef.current = {};
 
+      // Update existing markers or create new ones
       Object.entries(carLocations).forEach(([carNum, location]) => {
         if (!location.latitude || !location.longitude) return;
 
         try {
           const actualCarNumber = location.carNumber || parseInt(carNum, 10);
-          const marker = new window.google.maps.Marker({
-            map: mapRef.current,
-            position: {
+
+          if (markersRef.current[actualCarNumber]) {
+            // Update existing marker position
+            markersRef.current[actualCarNumber].setPosition({
               lat: location.latitude,
               lng: location.longitude
-            },
-            title: `Car ${actualCarNumber}`,
-            icon: {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 10,
-              fillColor: '#4285F4',
-              fillOpacity: 1,
-              strokeColor: '#ffffff',
-              strokeWeight: 2
-            },
-            label: {
-              text: String(actualCarNumber),
-              color: '#ffffff',
-              fontSize: '12px',
-              fontWeight: 'bold'
-            }
-          });
+            });
+            markersLogger.debug(`✅ Updated marker position for car ${actualCarNumber} (overview)`);
+          } else {
+            // Create new marker
+            const marker = new window.google.maps.Marker({
+              map: mapRef.current,
+              position: {
+                lat: location.latitude,
+                lng: location.longitude
+              },
+              title: `Car ${actualCarNumber}`,
+              icon: {
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: '#4285F4',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2
+              },
+              label: {
+                text: String(actualCarNumber),
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }
+            });
 
-          markersRef.current[actualCarNumber] = marker;
+            markersRef.current[actualCarNumber] = marker;
+            markersLogger.log(`✅ Marker created for car ${actualCarNumber} (overview)`);
+          }
         } catch (error) {
-          console.error(`❌ Error creating marker for car ${carNum}:`, error);
+          console.error(`❌ Error with marker for car ${carNum}:`, error);
         }
       });
     }
 
     markersLogger.log('✅ Total markers now:', Object.keys(markersRef.current).length);
-  }, [carLocations, googleMapsLoaded, selectedCar, viewMode]);
+  }, [carLocations, googleMapsLoaded, googleMapsMarkerReady, selectedCar, viewMode]);
 
   // Save state to localStorage when it changes
   useEffect(() => {
@@ -981,14 +1097,23 @@ const CouchNavigator = () => {
         messagesLogger.log(`📬 Received ${msgs.length} messages for car ${carNum}`);
         setMessages(msgs);
 
-        if (msgs.length > lastMessageCountRef.current && lastMessageCountRef.current > 0) {
+        // Improved duplicate notification prevention:
+        // Only notify if we have a NEW message ID we haven't seen before
+        if (msgs.length > 0) {
           const latestMessage = msgs[msgs.length - 1];
-          if ((viewMode === 'navigator' && latestMessage.sender === 'couch') ||
-              (viewMode === 'couch' && latestMessage.sender === 'navigator')) {
+          const isNewMessage = latestMessage.id !== lastNotifiedMessageIdRef.current;
+          const isMessageForMe = (viewMode === 'navigator' && latestMessage.sender === 'couch') ||
+                                  (viewMode === 'couch' && latestMessage.sender === 'navigator');
+
+          if (isNewMessage && isMessageForMe && lastMessageCountRef.current > 0) {
             try {
+              messagesLogger.log(`📲 New message detected: ${latestMessage.id}`);
               showNotification('New Message', latestMessage.message);
               playNotificationSound();
               hapticNewMessage(); // Haptic feedback for new message
+
+              // Track this message ID to prevent duplicate notifications on reconnect
+              lastNotifiedMessageIdRef.current = latestMessage.id;
 
               // Mark message as delivered
               if (latestMessage.id && isMountedRef.current) {
@@ -999,6 +1124,8 @@ const CouchNavigator = () => {
             } catch (error) {
               messagesLogger.error('Error processing new message notification:', error);
             }
+          } else if (!isNewMessage) {
+            messagesLogger.debug(`⏭️ Skipping notification - message ${latestMessage.id} already notified`);
           }
         }
 
@@ -1746,6 +1873,16 @@ const CouchNavigator = () => {
                   setNotificationsEnabled(granted);
                   if (granted) {
                     await showNotification('Notifications Enabled', 'You will now receive message updates');
+
+                    // Request FCM token for web push notifications
+                    if (!isNativeApp && userProfile?.uid) {
+                      try {
+                        await requestFCMToken(userProfile.uid);
+                        console.log('✅ FCM token registered');
+                      } catch (error) {
+                        console.error('❌ Error registering FCM token:', error);
+                      }
+                    }
                   }
                 } else {
                   setNotificationsEnabled(false);
@@ -2042,32 +2179,42 @@ const CouchNavigator = () => {
                   )}
                 </div>
 
-                {googleMapsLoaded && carLocations[selectedCar] && initialMapCenterRef.current && (
+                {googleMapsLoaded && (
                   <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
                       <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                         <Navigation size={20} className="text-blue-600" />
                         Your Location{activeRides.length > 0 ? ' & Route' : ''}
                       </h3>
-                      <button
-                        onClick={() => centerMapOnCar(selectedCar)}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition flex items-center gap-2 touch-manipulation whitespace-nowrap"
-                      >
-                        <Navigation size={16} />
-                        Recenter
-                      </button>
+                      {carLocations[selectedCar] && (
+                        <button
+                          onClick={() => centerMapOnCar(selectedCar)}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition flex items-center gap-2 touch-manipulation whitespace-nowrap"
+                        >
+                          <Navigation size={16} />
+                          Recenter
+                        </button>
+                      )}
                     </div>
                     <StableMap
                       key={`nav-map-${selectedCar}`}
-                      initialCenter={initialMapCenterRef.current}
+                      initialCenter={initialMapCenterRef.current || DEFAULT_MAP_CENTER}
                       onMapLoad={onMapLoad}
                       mapOptions={mapOptions}
                       mapContainerStyle={mapContainerStyle}
                     />
-                    <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                      <Clock size={12} />
-                      Last updated: {carLocations[selectedCar].updatedAt?.toLocaleTimeString() || 'Unknown'}
-                    </p>
+                    {!carLocations[selectedCar] && (
+                      <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
+                        <Clock size={12} />
+                        Waiting for location data...
+                      </p>
+                    )}
+                    {carLocations[selectedCar] && (
+                      <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                        <Clock size={12} />
+                        Last updated: {carLocations[selectedCar].updatedAt?.toLocaleTimeString() || 'Unknown'}
+                      </p>
+                    )}
                   </div>
                 )}
 

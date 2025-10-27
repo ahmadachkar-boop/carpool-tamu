@@ -61,19 +61,29 @@ export const requestNotificationPermission = async () => {
   }
 };
 
+// Consistent notification ID for replacing previous notifications
+// Using a fixed ID ensures new notifications replace old ones instead of stacking
+const NOTIFICATION_ID = 1001;
+
 // Show notification
 export const showNotification = async (title, body) => {
   if (isNativeApp) {
     try {
-      // For immediate notifications on iOS/Android, use schedule with current time
-      // This is more reliable than scheduling 100ms in the future
-      const notificationId = Date.now();
+      // Cancel any existing notification first to prevent duplicates
+      try {
+        await LocalNotifications.cancel({ notifications: [{ id: NOTIFICATION_ID }] });
+      } catch (cancelError) {
+        // Ignore cancel errors - notification might not exist
+        console.log('No previous notification to cancel');
+      }
 
+      // For immediate notifications on iOS/Android, use schedule with current time
+      // Using a CONSISTENT ID ensures this replaces any previous notification
       await LocalNotifications.schedule({
         notifications: [{
           title,
           body,
-          id: notificationId,
+          id: NOTIFICATION_ID, // ✅ Fixed ID - replaces previous notification
           schedule: { at: new Date() }, // Trigger immediately
           sound: 'default',
           smallIcon: 'ic_stat_icon_config_sample',
@@ -85,7 +95,7 @@ export const showNotification = async (title, body) => {
         }]
       });
 
-      console.log('✅ Native notification scheduled:', notificationId);
+      console.log('✅ Native notification scheduled with ID:', NOTIFICATION_ID);
     } catch (error) {
       console.error('❌ Error showing native notification:', error);
 
@@ -95,7 +105,7 @@ export const showNotification = async (title, body) => {
           notifications: [{
             title,
             body,
-            id: Date.now()
+            id: NOTIFICATION_ID
           }]
         });
       } catch (fallbackError) {
@@ -111,6 +121,7 @@ export const showNotification = async (title, body) => {
           icon: '/logo192.png',
           badge: '/logo192.png',
           tag: 'carpool-notification', // Prevents duplicate notifications
+          renotify: true, // Allow notification to replace itself even with same tag
           requireInteraction: false,
           silent: false
         });
