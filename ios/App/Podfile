@@ -33,4 +33,21 @@ post_install do |installer|
       config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
   end
+
+  # Fix for missing privacy bundle resources
+  # This removes references to privacy bundles that don't exist
+  installer.pods_project.targets.each do |target|
+    if target.name == 'GoogleUtilities' || target.name == 'nanopb' || target.name == 'PromisesObjC'
+      target.build_phases.each do |build_phase|
+        if build_phase.is_a?(Xcodeproj::Project::Object::PBXResourcesBuildPhase)
+          build_phase.files.each do |file|
+            if file.file_ref&.path&.include?('Privacy') && file.file_ref&.path&.end_with?('.bundle')
+              puts "Removing missing privacy bundle reference: #{file.file_ref.path}"
+              build_phase.files.delete(file)
+            end
+          end
+        end
+      end
+    end
+  end
 end
