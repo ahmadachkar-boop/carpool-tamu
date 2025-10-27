@@ -1,9 +1,12 @@
-// functions/index.js - Updated for automatic account creation
+// functions/index.js - Updated for automatic account creation and push notifications
 const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 
 admin.initializeApp();
+
+const db = admin.firestore();
+const messaging = admin.messaging();
 
 const createEmailTransporter = () => {
   return nodemailer.createTransport({
@@ -331,4 +334,206 @@ The TAMU Carpool Team`,
   const info = await transporter.sendMail(mailOptions);
   console.log("✅ Approval email sent successfully!");
   console.log("Message ID:", info.messageId);
+}
+
+// ============================================================================
+// PUSH NOTIFICATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Send push notification when a new message is created in couchMessages
+ * This enables notifications to work when the app is closed or in background
+ */
+exports.sendMessageNotification = onDocumentCreated(
+    "couchMessages/{messageId}",
+    async (event) => {
+      console.log("=== MESSAGE NOTIFICATION TRIGGERED ===");
+
+      try {
+        const message = event.data.data();
+        const messageId = event.params.messageId;
+
+        console.log("New message from:", message.sender);
+        console.log("Car number:", message.carNumber);
+        console.log("Message:", message.message);
+
+        // Determine who should receive the notification
+        // If sender is "couch", notify the navigator (driver)
+        // If sender is "navigator", notify couch users monitoring this car
+
+        if (message.sender === "navigator") {
+          // Notify all couch users monitoring this car
+          await notifyCouchUsers(message, messageId);
+        } else if (message.sender === "couch") {
+          // Notify the navigator (driver) of this car
+          await notifyNavigator(message, messageId);
+        }
+
+        return null;
+      } catch (error) {
+        console.error("❌ ERROR sending message notification:");
+        console.error("Message:", error.message);
+        console.error("Stack:", error.stack);
+        return null;
+      }
+    });
+
+/**
+ * Notify navigator (driver) when couch sends a message
+ */
+async function notifyNavigator(message, messageId) {
+  try {
+    // Get FCM tokens for users who might be driving this car
+    // For now, we'll send to all tokens and let the client filter
+    const tokensSnapshot = await db.collection("fcmTokens").get();
+
+    if (tokensSnapshot.empty) {
+      console.log("No FCM tokens found");
+      return;
+    }
+
+    const tokens = [];
+    tokensSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.token) {
+        tokens.push(data.token);
+      }
+    });
+
+    if (tokens.length === 0) {
+      console.log("No valid tokens found");
+      return;
+    }
+
+    console.log(`Sending notification to ${tokens.length} device(s)`);
+
+    // Create notification payload
+    const payload = {
+      notification: {
+        title: "New Message from Couch",
+        body: message.message.substring(0, 100), // Limit to 100 chars
+      },
+      data: {
+        messageId: messageId,
+        carNumber: String(message.carNumber),
+        sender: message.sender,
+        type: "couch_message",
+      },
+    };
+
+    // Send to all tokens (multicast)
+    const response = await messaging.sendEachForMulticast({
+      tokens: tokens,
+      notification: payload.notification,
+      data: payload.data,
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+          },
+        },
+      },
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+          priority: "high",
+        },
+      },
+    });
+
+    console.log(`✅ Notification sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
+
+    // Log any failures
+    if (response.failureCount > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`Failed to send to token ${idx}:`, resp.error);
+        }
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error notifying navigator:", error);
+  }
+}
+
+/**
+ * Notify couch users when navigator sends a message
+ */
+async function notifyCouchUsers(message, messageId) {
+  try {
+    // Get FCM tokens for all users (couch users can be any member monitoring)
+    const tokensSnapshot = await db.collection("fcmTokens").get();
+
+    if (tokensSnapshot.empty) {
+      console.log("No FCM tokens found");
+      return;
+    }
+
+    const tokens = [];
+    tokensSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.token) {
+        tokens.push(data.token);
+      }
+    });
+
+    if (tokens.length === 0) {
+      console.log("No valid tokens found");
+      return;
+    }
+
+    console.log(`Sending notification to ${tokens.length} device(s)`);
+
+    // Create notification payload
+    const senderName = message.senderName || `Car ${message.carNumber}`;
+    const payload = {
+      notification: {
+        title: `New Message from ${senderName}`,
+        body: message.message.substring(0, 100), // Limit to 100 chars
+      },
+      data: {
+        messageId: messageId,
+        carNumber: String(message.carNumber),
+        sender: message.sender,
+        type: "navigator_message",
+      },
+    };
+
+    // Send to all tokens (multicast)
+    const response = await messaging.sendEachForMulticast({
+      tokens: tokens,
+      notification: payload.notification,
+      data: payload.data,
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+            badge: 1,
+          },
+        },
+      },
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+          priority: "high",
+        },
+      },
+    });
+
+    console.log(`✅ Notification sent! Success: ${response.successCount}, Failed: ${response.failureCount}`);
+
+    // Log any failures
+    if (response.failureCount > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`Failed to send to token ${idx}:`, resp.error);
+        }
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error notifying couch users:", error);
+  }
 }

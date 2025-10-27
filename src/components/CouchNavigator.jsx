@@ -745,9 +745,6 @@ const CouchNavigator = () => {
       return;
     }
 
-    // Only clear markers when view mode or selected car changes, not on location updates
-    const shouldRecreateMarkers = !markersRef.current[selectedCar] || Object.keys(markersRef.current).length === 0;
-
     if (viewMode === 'navigator' && selectedCar) {
       const location = carLocations[selectedCar];
       if (location && location.latitude && location.longitude) {
@@ -798,17 +795,43 @@ const CouchNavigator = () => {
 
       // Route rendering moved to separate useEffect
     } else if (viewMode === 'couch' && selectedCar) {
+      // When switching from overview to single car, clear all overview markers first
+      const currentMarkerKeys = Object.keys(markersRef.current);
+      if (currentMarkerKeys.length > 1 || (currentMarkerKeys.length === 1 && currentMarkerKeys[0] != selectedCar)) {
+        markersLogger.log('🧹 Clearing overview markers for single car view');
+        Object.keys(markersRef.current).forEach(key => {
+          if (key != selectedCar) {
+            const marker = markersRef.current[key];
+            if (marker && marker.setMap) {
+              marker.setMap(null);
+            }
+            delete markersRef.current[key];
+          }
+        });
+      }
+
       const location = carLocations[selectedCar];
       if (location && location.latitude && location.longitude) {
         try {
           // Update existing marker position or create new one
           if (markersRef.current[selectedCar]) {
+            // Update position and ensure correct styling for single car view
             markersRef.current[selectedCar].setPosition({
               lat: location.latitude,
               lng: location.longitude
             });
-            markersLogger.log(`✅ Updated marker position for car ${selectedCar} (couch view)`);
+            // Update icon to larger scale for single car view
+            markersRef.current[selectedCar].setIcon({
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 12, // Larger for single car view
+              fillColor: '#4285F4',
+              fillOpacity: 1,
+              strokeColor: '#ffffff',
+              strokeWeight: 3
+            });
+            markersLogger.log(`✅ Updated marker for car ${selectedCar} (couch single view)`);
           } else {
+            // Create new marker
             const marker = new window.google.maps.Marker({
               map: mapRef.current,
               position: {
@@ -833,9 +856,9 @@ const CouchNavigator = () => {
             });
 
             markersRef.current[selectedCar] = marker;
-            markersLogger.log(`✅ Marker created for car ${selectedCar} (couch view)`);
-            
-            // Only center on initial marker creation
+            markersLogger.log(`✅ Marker created for car ${selectedCar} (couch single view)`);
+
+            // Center on initial marker creation
             centerMapOnCar(selectedCar);
           }
         } catch (error) {
@@ -1872,17 +1895,19 @@ const CouchNavigator = () => {
                   const granted = await requestNotificationPermission();
                   setNotificationsEnabled(granted);
                   if (granted) {
-                    await showNotification('Notifications Enabled', 'You will now receive message updates');
-
+                    // Show notification AFTER we register FCM token to avoid double notifications
                     // Request FCM token for web push notifications
                     if (!isNativeApp && userProfile?.uid) {
                       try {
-                        await requestFCMToken(userProfile.uid);
+                        await requestFCMToken(userProfile.uid, true); // Pass true to skip duplicate permission request
                         console.log('✅ FCM token registered');
                       } catch (error) {
                         console.error('❌ Error registering FCM token:', error);
                       }
                     }
+
+                    // Show success notification once
+                    await showNotification('Notifications Enabled', 'You will now receive message updates');
                   }
                 } else {
                   setNotificationsEnabled(false);

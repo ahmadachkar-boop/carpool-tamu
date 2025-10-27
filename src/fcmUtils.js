@@ -9,7 +9,7 @@ const isNativeApp = Capacitor.isNativePlatform();
 // VAPID key for web push notifications
 // IMPORTANT: You need to generate this in Firebase Console > Project Settings > Cloud Messaging > Web Push certificates
 // For now, this is a placeholder - you'll need to replace it with your actual VAPID key
-const VAPID_KEY = 'BM1wHVUg0GyUIAT3xk8_HRmD7sRLa34UKlkQzD2NZef2YiYZdKscBDAZN8Ke3P4geUikvh4OgJaIxE0cC29_byA';
+const VAPID_KEY = 'REPLACE_WITH_YOUR_VAPID_KEY';
 
 /**
  * Initialize Firebase Cloud Messaging for web
@@ -18,6 +18,13 @@ const VAPID_KEY = 'BM1wHVUg0GyUIAT3xk8_HRmD7sRLa34UKlkQzD2NZef2YiYZdKscBDAZN8Ke3
 export const initializeFCM = async () => {
   if (isNativeApp) {
     console.log('📱 Native app detected - using Capacitor Push Notifications instead of FCM');
+    return null;
+  }
+
+  // Check if VAPID key is configured
+  if (!VAPID_KEY) {
+    console.error('❌ VAPID_KEY not configured! Add REACT_APP_VAPID_KEY to your .env file.');
+    console.error('Generate a VAPID key in Firebase Console > Project Settings > Cloud Messaging > Web Push certificates');
     return null;
   }
 
@@ -40,9 +47,10 @@ export const initializeFCM = async () => {
 /**
  * Request notification permissions and get FCM token for web
  * @param {string} userId - User ID to associate token with
+ * @param {boolean} permissionAlreadyGranted - Skip permission request if already granted
  * @returns {Promise<string|null>} FCM token or null
  */
-export const requestFCMToken = async (userId) => {
+export const requestFCMToken = async (userId, permissionAlreadyGranted = false) => {
   if (isNativeApp) {
     console.log('📱 Using native push notifications - skipping FCM token');
     return null;
@@ -52,10 +60,18 @@ export const requestFCMToken = async (userId) => {
     const messaging = await initializeFCM();
     if (!messaging) return null;
 
-    // Request permission
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      console.log('❌ Notification permission denied');
+    // Request permission only if not already granted
+    if (!permissionAlreadyGranted) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.log('❌ Notification permission denied');
+        return null;
+      }
+    }
+
+    // Verify permission is actually granted
+    if (Notification.permission !== 'granted') {
+      console.log('❌ Notification permission not granted');
       return null;
     }
 
