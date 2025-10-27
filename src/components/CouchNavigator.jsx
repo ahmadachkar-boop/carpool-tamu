@@ -211,6 +211,10 @@ const CouchNavigator = () => {
   const [eta, setEta] = useState(null);
   const [hasAlwaysPermission, setHasAlwaysPermission] = useState(false);
 
+  // User assignment and access control
+  const [userAssignment, setUserAssignment] = useState(null); // { type: 'car', carNumber: 1 } or { type: 'couch' } or { type: 'unassigned' }
+  const [assignmentLoading, setAssignmentLoading] = useState(true);
+
   // Connection and offline state
   const [isOnline, setIsOnline] = useState(true);
   const [firestoreConnected, setFirestoreConnectionState] = useState(true);
@@ -1002,6 +1006,80 @@ const CouchNavigator = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Check user assignment and auto-route
+  useEffect(() => {
+    const checkUserAssignment = async () => {
+      if (!activeNDR || !userProfile) {
+        setAssignmentLoading(false);
+        return;
+      }
+
+      setAssignmentLoading(true);
+      console.log('🔐 Checking user assignment for:', userProfile.id);
+
+      try {
+        const ndrDocRef = doc(db, 'ndrs', activeNDR.id);
+        const ndrDoc = await getDoc(ndrDocRef);
+
+        if (!ndrDoc.exists()) {
+          console.log('❌ NDR document not found');
+          setUserAssignment({ type: 'unassigned' });
+          setAssignmentLoading(false);
+          return;
+        }
+
+        const ndrData = ndrDoc.data();
+        const assignments = ndrData.assignments || {};
+        const userId = userProfile.id;
+
+        // Check if user is assigned to couch
+        if (assignments.couch && Array.isArray(assignments.couch) && assignments.couch.includes(userId)) {
+          console.log('✅ User is assigned to COUCH');
+          setUserAssignment({ type: 'couch' });
+          setViewMode('couch');
+          // Couch users can select cars manually
+        }
+        // Check if user is assigned to any car
+        else if (assignments.cars) {
+          let assignedCarNumber = null;
+
+          for (const [carNum, memberIds] of Object.entries(assignments.cars)) {
+            if (Array.isArray(memberIds) && memberIds.includes(userId)) {
+              assignedCarNumber = parseInt(carNum, 10);
+              break;
+            }
+          }
+
+          if (assignedCarNumber) {
+            console.log(`✅ User is assigned to CAR ${assignedCarNumber}`);
+            setUserAssignment({ type: 'car', carNumber: assignedCarNumber });
+            setViewMode('navigator');
+            setSelectedCar(String(assignedCarNumber));
+            setCarNumber(String(assignedCarNumber));
+
+            // Save to localStorage
+            localStorage.setItem('selectedCar', String(assignedCarNumber));
+            localStorage.setItem('viewMode', 'navigator');
+          } else {
+            console.log('❌ User is NOT assigned to any role');
+            setUserAssignment({ type: 'unassigned' });
+          }
+        } else {
+          console.log('❌ User is NOT assigned to any role');
+          setUserAssignment({ type: 'unassigned' });
+        }
+
+        setAssignmentLoading(false);
+      } catch (error) {
+        console.error('❌ Error checking user assignment:', error);
+        setUserAssignment({ type: 'unassigned' });
+        setAssignmentLoading(false);
+      }
+    };
+
+    checkUserAssignment();
+  }, [activeNDR, userProfile]);
 
   useEffect(() => {
     if (!activeNDR) {
@@ -1858,6 +1936,41 @@ const CouchNavigator = () => {
     );
   }
 
+  // Show loading state while checking assignment
+  if (assignmentLoading) {
+    return (
+      <div className="space-y-6 p-4">
+        <h2 className="text-3xl font-bold text-gray-900">Couch Navigator</h2>
+        <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-8 text-center">
+          <RefreshCw className="mx-auto mb-4 text-blue-600 animate-spin" size={64} />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Checking Assignment...</h3>
+          <p className="text-gray-600">
+            Verifying your role assignment for this NDR.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Block unassigned users
+  if (userAssignment && userAssignment.type === 'unassigned') {
+    return (
+      <div className="space-y-6 p-4">
+        <h2 className="text-3xl font-bold text-gray-900">Couch Navigator</h2>
+        <div className="bg-red-50 border-2 border-red-400 rounded-xl p-8 text-center">
+          <AlertCircle className="mx-auto mb-4 text-red-600" size={64} />
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Access Restricted</h3>
+          <p className="text-gray-600 mb-4">
+            You are not assigned to any role for this NDR. Only assigned navigators and couch users can access this section.
+          </p>
+          <p className="text-sm text-gray-500">
+            If you believe this is an error, please contact your Director of Cars or Director of Night.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6 mb-6">
@@ -1866,33 +1979,63 @@ const CouchNavigator = () => {
             Couch Navigator
           </h1>
           
+          {/* Show role badge for car navigators */}
+          {userAssignment && userAssignment.type === 'car' && (
+            <div className="bg-blue-50 border border-blue-300 rounded-lg px-4 py-2 mb-2">
+              <p className="text-sm font-semibold text-blue-800">
+                🚗 Assigned to Car {userAssignment.carNumber}
+              </p>
+              <p className="text-xs text-blue-600">
+                You are locked into navigator mode for your assigned car.
+              </p>
+            </div>
+          )}
+
+          {/* Show role badge for couch users */}
+          {userAssignment && userAssignment.type === 'couch' && (
+            <div className="bg-green-50 border border-green-300 rounded-lg px-4 py-2 mb-2">
+              <p className="text-sm font-semibold text-green-800">
+                🛋️ Couch Navigator
+              </p>
+              <p className="text-xs text-green-600">
+                You can view and switch between all cars.
+              </p>
+            </div>
+          )}
+
+          {/* Mode switching buttons - only show for couch users */}
+          {userAssignment && userAssignment.type === 'couch' && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setViewMode('couch');
+                  localStorage.setItem('viewMode', 'couch');
+                }}
+                className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
+                  viewMode === 'couch'
+                    ? 'bg-[#79F200] text-gray-900'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                🛋️ Couch
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode('navigator');
+                  localStorage.setItem('viewMode', 'navigator');
+                }}
+                className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
+                  viewMode === 'navigator'
+                    ? 'bg-[#79F200] text-gray-900'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                🚗 Navigator
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setViewMode('couch');
-                localStorage.setItem('viewMode', 'couch');
-              }}
-              className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
-                viewMode === 'couch'
-                  ? 'bg-[#79F200] text-gray-900'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              🛋️ Couch
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('navigator');
-                localStorage.setItem('viewMode', 'navigator');
-              }}
-              className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs sm:text-sm transition whitespace-nowrap ${
-                viewMode === 'navigator'
-                  ? 'bg-[#79F200] text-gray-900'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              🚗 Navigator
-            </button>
             
             <button
               onClick={async () => {
@@ -2329,27 +2472,42 @@ const CouchNavigator = () => {
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Select Car to Monitor
+                {userAssignment && userAssignment.type === 'car'
+                  ? `Car ${userAssignment.carNumber}`
+                  : 'Select Car to Monitor'}
               </h3>
-              <select
-                value={selectedCar || ''}
-                onChange={(e) => {
-                  const newCar = e.target.value || null;
-                  if (newCar !== selectedCar) {
-                    initialMapCenterRef.current = null;
-                  }
-                  setSelectedCar(newCar);
-                }}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900 text-base"
-              >
-                <option value="">Select a car...</option>
-                {availableCars.map(car => (
-                  <option key={car.carNumber} value={car.carNumber}>
-                    Car {car.carNumber}
-                    {car.driverName ? ` - ${car.driverName}` : ''}
-                  </option>
-                ))}
-              </select>
+
+              {/* Only allow car selection for couch users */}
+              {userAssignment && userAssignment.type === 'couch' ? (
+                <select
+                  value={selectedCar || ''}
+                  onChange={(e) => {
+                    const newCar = e.target.value || null;
+                    if (newCar !== selectedCar) {
+                      initialMapCenterRef.current = null;
+                    }
+                    setSelectedCar(newCar);
+                  }}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none text-gray-900 text-base"
+                >
+                  <option value="">Select a car...</option>
+                  {availableCars.map(car => (
+                    <option key={car.carNumber} value={car.carNumber}>
+                      Car {car.carNumber}
+                      {car.driverName ? ` - ${car.driverName}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="bg-gray-100 px-4 py-3 rounded-xl border-2 border-gray-300">
+                  <p className="text-gray-700 font-semibold">
+                    Car {userAssignment?.carNumber || selectedCar}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    You are locked to your assigned car
+                  </p>
+                </div>
+              )}
             </div>
 
             {selectedCar && (

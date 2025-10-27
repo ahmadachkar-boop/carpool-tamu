@@ -380,35 +380,62 @@ exports.sendMessageNotification = onDocumentCreated(
 
 /**
  * Notify navigator (driver) when couch sends a message
+ * Only sends to the user assigned to the specific car in the NDR
  * @param {Object} message - The message data from Firestore
  * @param {string} messageId - The ID of the message document
  * @return {Promise<void>}
  */
 async function notifyNavigator(message, messageId) {
   try {
-    // Get FCM tokens for users who might be driving this car
-    // For now, we'll send to all tokens and let the client filter
-    const tokensSnapshot = await db.collection("fcmTokens").get();
+    // Get the NDR to find the assigned navigator for this car
+    const ndrId = message.ndrId;
+    const carNumber = message.carNumber;
 
-    if (tokensSnapshot.empty) {
-      console.log("No FCM tokens found");
+    if (!ndrId || !carNumber) {
+      console.log("Missing ndrId or carNumber, cannot determine assigned navigator");
       return;
     }
 
+    console.log(`Finding navigator assigned to car ${carNumber} for NDR ${ndrId}`);
+
+    // Query NDR document to get assignments
+    const ndrDoc = await db.collection("ndrs").doc(ndrId).get();
+
+    if (!ndrDoc.exists) {
+      console.log("NDR document not found");
+      return;
+    }
+
+    const ndrData = ndrDoc.data();
+    const assignments = ndrData.assignments || {};
+    const carAssignments = assignments.cars || {};
+
+    // Get members assigned to this car
+    const assignedMemberIds = carAssignments[carNumber] || [];
+
+    if (assignedMemberIds.length === 0) {
+      console.log(`No members assigned to car ${carNumber}`);
+      return;
+    }
+
+    console.log(`Found ${assignedMemberIds.length} member(s) assigned to car ${carNumber}:`, assignedMemberIds);
+
+    // Get FCM tokens for assigned members
     const tokens = [];
-    tokensSnapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.token) {
-        tokens.push(data.token);
+    for (const memberId of assignedMemberIds) {
+      const tokenDoc = await db.collection("fcmTokens").doc(memberId).get();
+      if (tokenDoc.exists && tokenDoc.data().token) {
+        tokens.push(tokenDoc.data().token);
+        console.log(`✅ Found token for member ${memberId}`);
       }
-    });
+    }
 
     if (tokens.length === 0) {
-      console.log("No valid tokens found");
+      console.log("No FCM tokens found for assigned navigators");
       return;
     }
 
-    console.log(`Sending notification to ${tokens.length} device(s)`);
+    console.log(`Sending notification to ${tokens.length} assigned navigator(s)`);
 
     // Create notification payload
     const payload = {
@@ -424,7 +451,7 @@ async function notifyNavigator(message, messageId) {
       },
     };
 
-    // Send to all tokens (multicast)
+    // Send to assigned navigator tokens only
     const response = await messaging.sendEachForMulticast({
       tokens: tokens,
       notification: payload.notification,
@@ -463,34 +490,58 @@ async function notifyNavigator(message, messageId) {
 
 /**
  * Notify couch users when navigator sends a message
+ * Only sends to users assigned to couch role in the NDR
  * @param {Object} message - The message data from Firestore
  * @param {string} messageId - The ID of the message document
  * @return {Promise<void>}
  */
 async function notifyCouchUsers(message, messageId) {
   try {
-    // Get FCM tokens for all users (couch users can be any member monitoring)
-    const tokensSnapshot = await db.collection("fcmTokens").get();
+    // Get the NDR to find assigned couch users
+    const ndrId = message.ndrId;
 
-    if (tokensSnapshot.empty) {
-      console.log("No FCM tokens found");
+    if (!ndrId) {
+      console.log("Missing ndrId, cannot determine assigned couch users");
       return;
     }
 
+    console.log(`Finding couch users assigned for NDR ${ndrId}`);
+
+    // Query NDR document to get assignments
+    const ndrDoc = await db.collection("ndrs").doc(ndrId).get();
+
+    if (!ndrDoc.exists) {
+      console.log("NDR document not found");
+      return;
+    }
+
+    const ndrData = ndrDoc.data();
+    const assignments = ndrData.assignments || {};
+    const couchUserIds = assignments.couch || [];
+
+    if (couchUserIds.length === 0) {
+      console.log("No couch users assigned to this NDR");
+      return;
+    }
+
+    console.log(`Found ${couchUserIds.length} couch user(s) assigned:`, couchUserIds);
+
+    // Get FCM tokens for assigned couch users
     const tokens = [];
-    tokensSnapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.token) {
-        tokens.push(data.token);
+    for (const userId of couchUserIds) {
+      const tokenDoc = await db.collection("fcmTokens").doc(userId).get();
+      if (tokenDoc.exists && tokenDoc.data().token) {
+        tokens.push(tokenDoc.data().token);
+        console.log(`✅ Found token for couch user ${userId}`);
       }
-    });
+    }
 
     if (tokens.length === 0) {
-      console.log("No valid tokens found");
+      console.log("No FCM tokens found for assigned couch users");
       return;
     }
 
-    console.log(`Sending notification to ${tokens.length} device(s)`);
+    console.log(`Sending notification to ${tokens.length} assigned couch user(s)`);
 
     // Create notification payload
     const senderName = message.senderName || `Car ${message.carNumber}`;
@@ -507,7 +558,7 @@ async function notifyCouchUsers(message, messageId) {
       },
     };
 
-    // Send to all tokens (multicast)
+    // Send to assigned couch user tokens only
     const response = await messaging.sendEachForMulticast({
       tokens: tokens,
       notification: payload.notification,
