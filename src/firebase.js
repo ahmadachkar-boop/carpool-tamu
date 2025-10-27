@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager, persistentMultipleTabManager } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { firebaseLogger } from './logger';
 
@@ -29,17 +29,31 @@ if (Capacitor.isNativePlatform()) {
   auth = getAuth(app);
 }
 
-// Initialize Firestore with new cache API (works on both platforms)
-// Note: persistentSingleTabManager() may cause WebChannel termination errors in dev mode
-// with React StrictMode due to rapid component mounting/unmounting. These errors are
-// suppressed by consoleFilter.js and are benign.
+// Initialize Firestore with cache configuration based on platform
+// Native apps (iOS/Android) need persistentMultipleTabManager to avoid transaction errors
+// Web apps can use persistentSingleTabManager for better performance
 let db;
 try {
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentSingleTabManager()
-    })
-  });
+  const isNative = Capacitor.isNativePlatform();
+
+  if (isNative) {
+    // Native platform - use multiple tab manager to avoid transaction errors
+    firebaseLogger.log('🔧 Initializing Firestore for Native platform with multi-tab cache');
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    });
+  } else {
+    // Web platform - use single tab manager
+    firebaseLogger.log('🔧 Initializing Firestore for Web platform with single-tab cache');
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentSingleTabManager()
+      })
+    });
+  }
+
   firebaseLogger.log('✅ Firestore initialized with persistent cache');
 } catch (error) {
   // Fallback if already initialized
