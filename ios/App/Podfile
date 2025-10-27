@@ -51,14 +51,30 @@ post_install do |installer|
     end
   end
 
-  # Fix privacy bundle build issues by skipping their build
+  # Fix privacy bundle build issues by removing them from dependencies
   installer.pods_project.targets.each do |target|
-    if target.name.end_with?('-Privacy') || target.name.end_with?('_Privacy')
-      target.build_configurations.each do |config|
-        # Don't build or install these targets
-        config.build_settings['SKIP_INSTALL'] = 'YES'
-        config.build_settings['VALID_ARCHS'] = ''
+    # Remove privacy bundle targets from all target dependencies
+    target.dependencies.delete_if do |dep|
+      dep.name.end_with?('-Privacy') || dep.name.end_with?('_Privacy')
+    end
+
+    # Remove privacy bundle build phases
+    target.build_phases.each do |build_phase|
+      if build_phase.respond_to?(:files)
+        build_phase.files.delete_if do |file|
+          file.display_name&.include?('_Privacy.bundle') || file.display_name&.include?('-Privacy.bundle')
+        end
       end
     end
   end
+
+  # Remove privacy bundle targets completely from the project
+  installer.pods_project.targets.each do |target|
+    if target.name.end_with?('-Privacy') || target.name.end_with?('_Privacy')
+      target.remove_from_project
+    end
+  end
+
+  # Save the modified project
+  installer.pods_project.save
 end
