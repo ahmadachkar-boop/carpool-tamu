@@ -51,17 +51,24 @@ post_install do |installer|
     end
   end
 
-  # Fix for privacy manifest bundle issues (nanopb, GoogleUtilities, etc.)
-  installer.pods_project.targets.each do |target|
-    target.build_phases.each do |build_phase|
-      if build_phase.respond_to?(:name) && build_phase.name&.start_with?('[CP] Copy Pods Resources')
-        resource_paths = build_phase.files.map(&:file_ref).compact.map(&:real_path).select { |p| p.to_s.end_with?('_Privacy.bundle') }
-        resource_paths.each do |resource_path|
-          if !File.exist?(resource_path)
-            puts "Removing missing privacy bundle reference: #{resource_path}"
-            build_phase.files.reject! { |file| file.file_ref&.real_path == resource_path }
-          end
-        end
+  # Fix for privacy bundle build errors - completely remove privacy bundle targets
+  installer.pods_project.targets.delete_if do |target|
+    target.name.end_with?('-Privacy') || target.name.end_with?('_Privacy')
+  end
+
+  # Remove privacy bundle framework references from aggregate targets
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.xcconfigs.each do |config_name, config_file|
+      xcconfig_path = aggregate_target.xcconfig_path(config_name)
+      if File.exist?(xcconfig_path)
+        xcconfig = File.read(xcconfig_path)
+
+        # Remove privacy bundle references from flags
+        new_xcconfig = xcconfig.gsub(/-framework "nanopb_Privacy"/, '')
+        new_xcconfig = new_xcconfig.gsub(/-framework "GoogleUtilities_Privacy"/, '')
+        new_xcconfig = new_xcconfig.gsub(/-framework "PromisesObjC_Privacy"/, '')
+
+        File.open(xcconfig_path, "w") { |file| file << new_xcconfig }
       end
     end
   end
