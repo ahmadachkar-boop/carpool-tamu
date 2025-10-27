@@ -19,22 +19,18 @@ end
 target 'App' do
   capacitor_pods
   # Add your Pods here
+
+  # Firebase for Push Notifications
+  pod 'Firebase/Messaging', '~> 11.0'
 end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
 
-  # Remove any Firebase framework references that might have been auto-linked
-  # This app uses Firebase JavaScript SDK, not native iOS SDK
+  # Fix for Firebase frameworks not being embedded properly
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
-      # Remove Firebase frameworks from linker flags if present
-      if config.build_settings['OTHER_LDFLAGS']
-        config.build_settings['OTHER_LDFLAGS'].delete('-framework "FBLPromises"')
-        config.build_settings['OTHER_LDFLAGS'].delete('-framework "FirebaseCore"')
-        config.build_settings['OTHER_LDFLAGS'].delete('-framework "FirebaseMessaging"')
-        config.build_settings['OTHER_LDFLAGS'].delete('-framework "FirebaseInstallations"')
-      end
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
     end
   end
 end
