@@ -7,9 +7,10 @@ import { PushNotifications } from '@capacitor/push-notifications';
 const isNativeApp = Capacitor.isNativePlatform();
 
 // VAPID key for web push notifications
-// IMPORTANT: You need to generate this in Firebase Console > Project Settings > Cloud Messaging > Web Push certificates
-// For now, this is a placeholder - you'll need to replace it with your actual VAPID key
-const VAPID_KEY = 'REPLACE_WITH_YOUR_VAPID_KEY';
+// This key is loaded from environment variables for security
+// Generate this in Firebase Console > Project Settings > Cloud Messaging > Web Push certificates
+// Add it to your .env file as: REACT_APP_VAPID_KEY=your_key_here
+const VAPID_KEY = process.env.REACT_APP_VAPID_KEY;
 
 /**
  * Initialize Firebase Cloud Messaging for web
@@ -18,6 +19,13 @@ const VAPID_KEY = 'REPLACE_WITH_YOUR_VAPID_KEY';
 export const initializeFCM = async () => {
   if (isNativeApp) {
     console.log('📱 Native app detected - using Capacitor Push Notifications instead of FCM');
+    return null;
+  }
+
+  // Check if VAPID key is configured
+  if (!VAPID_KEY) {
+    console.error('❌ VAPID_KEY not configured! Add REACT_APP_VAPID_KEY to your .env file.');
+    console.error('Generate a VAPID key in Firebase Console > Project Settings > Cloud Messaging > Web Push certificates');
     return null;
   }
 

@@ -39,17 +39,25 @@ Before you begin, make sure you have:
 5. Scroll down to **Web configuration** section
 6. Under **Web Push certificates**, click **Generate key pair**
 7. Copy the generated key (starts with "B...")
-8. Open `src/fcmUtils.js` and replace this line:
+8. Create a `.env` file in your project root:
 
-```javascript
-const VAPID_KEY = 'REPLACE_WITH_YOUR_VAPID_KEY';
+```bash
+# Copy the example file
+cp .env.example .env
 ```
 
-With:
+9. Open `.env` and add your VAPID key:
 
-```javascript
-const VAPID_KEY = 'YOUR_ACTUAL_VAPID_KEY_HERE';
+```env
+# .env
+REACT_APP_VAPID_KEY=BNdP9k_your_actual_vapid_key_here_QxYz
 ```
+
+**Important Security Notes:**
+- ✅ `.env` is already in `.gitignore` - it won't be committed
+- ✅ Never commit your `.env` file to git
+- ✅ Use `.env.example` as a template for other developers
+- ✅ For production, set this environment variable in your hosting platform
 
 ### Step 2: Enable Cloud Messaging API
 
@@ -262,9 +270,18 @@ exports.sendMessageNotification = functions.firestore
 
 ## Troubleshooting
 
-### Issue: "VAPID key not set" error
+### Issue: "VAPID key not set" or "VAPID_KEY not configured" error
 
-**Solution:** Make sure you replaced `REPLACE_WITH_YOUR_VAPID_KEY` in `src/fcmUtils.js` with your actual key from Firebase Console.
+**Solution:**
+1. Make sure you created a `.env` file in your project root
+2. Verify it contains: `REACT_APP_VAPID_KEY=your_actual_key`
+3. Restart your development server after adding the .env file:
+   ```bash
+   # Stop the server (Ctrl+C)
+   npm start
+   ```
+4. Check that your VAPID key starts with "B" (e.g., `BNdP9k...`)
+5. Verify the key has no extra spaces or quotes around it
 
 ### Issue: iOS notifications not working
 
@@ -301,7 +318,8 @@ exports.sendMessageNotification = functions.firestore
 
 Before deploying to production, verify:
 
-- [ ] VAPID key configured in `src/fcmUtils.js`
+- [ ] `.env` file created with REACT_APP_VAPID_KEY
+- [ ] `.env` file is in `.gitignore` (already done)
 - [ ] APNs key uploaded to Firebase Console
 - [ ] iOS Push Notifications capability enabled
 - [ ] Android google-services.json in place
@@ -333,8 +351,10 @@ If you encounter issues during setup:
 
 - ✅ `src/notificationUtils.js` - Fixed duplicate notifications
 - ✅ `src/components/CouchNavigator.jsx` - Fixed all map and notification issues
-- ✅ `src/fcmUtils.js` - NEW: FCM utilities
+- ✅ `src/fcmUtils.js` - NEW: FCM utilities (uses environment variables)
 - ✅ `public/firebase-messaging-sw.js` - NEW: Service worker for background notifications
+- ✅ `.env` - NEW: Create this file to store your VAPID key (use .env.example as template)
+- ✅ `.env.example` - NEW: Template for environment variables
 
 ---
 
