@@ -380,6 +380,9 @@ exports.sendMessageNotification = onDocumentCreated(
 
 /**
  * Notify navigator (driver) when couch sends a message
+ * @param {Object} message - The message data from Firestore
+ * @param {string} messageId - The ID of the message document
+ * @return {Promise<void>}
  */
 async function notifyNavigator(message, messageId) {
   try {
@@ -460,6 +463,9 @@ async function notifyNavigator(message, messageId) {
 
 /**
  * Notify couch users when navigator sends a message
+ * @param {Object} message - The message data from Firestore
+ * @param {string} messageId - The ID of the message document
+ * @return {Promise<void>}
  */
 async function notifyCouchUsers(message, messageId) {
   try {
