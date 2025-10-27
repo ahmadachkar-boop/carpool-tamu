@@ -50,4 +50,19 @@ post_install do |installer|
       end
     end
   end
+
+  # Fix for privacy manifest bundle issues (nanopb, GoogleUtilities, etc.)
+  installer.pods_project.targets.each do |target|
+    target.build_phases.each do |build_phase|
+      if build_phase.respond_to?(:name) && build_phase.name&.start_with?('[CP] Copy Pods Resources')
+        resource_paths = build_phase.files.map(&:file_ref).compact.map(&:real_path).select { |p| p.to_s.end_with?('_Privacy.bundle') }
+        resource_paths.each do |resource_path|
+          if !File.exist?(resource_path)
+            puts "Removing missing privacy bundle reference: #{resource_path}"
+            build_phase.files.reject! { |file| file.file_ref&.real_path == resource_path }
+          end
+        end
+      end
+    end
+  end
 end
