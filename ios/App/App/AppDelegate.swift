@@ -1,7 +1,8 @@
 import UIKit
 import Capacitor
-import Firebase
+import FirebaseCore
 import FirebaseMessaging
+import UserNotifications
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -9,16 +10,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Initialize Firebase
+        // Configure Firebase
         FirebaseApp.configure()
 
-        // Request notification permissions
+        // Set up push notifications
         UNUserNotificationCenter.current().delegate = self
 
+        // Request notification authorization
         let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
         UNUserNotificationCenter.current().requestAuthorization(
             options: authOptions,
-            completionHandler: { _, _ in }
+            completionHandler: { granted, error in
+                if let error = error {
+                    print("Error requesting notification authorization: \(error)")
+                }
+            }
         )
 
         application.registerForRemoteNotifications()
@@ -27,6 +33,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Messaging.messaging().delegate = self
 
         return true
+    }
+
+    // Handle APNs token registration
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        print("APNs device token: \(deviceToken)")
+        Messaging.messaging().apnsToken = deviceToken
+    }
+
+    // Handle APNs registration failure
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("Failed to register for remote notifications: \(error)")
+    }
+
+    // Handle notification when app is in foreground
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        print("Received remote notification: \(userInfo)")
+
+        // Let Firebase Messaging handle the notification
+        Messaging.messaging().appDidReceiveMessage(userInfo)
+
+        completionHandler(.newData)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -116,5 +145,54 @@ extension AppDelegate: MessagingDelegate {
 
         // You can send this token to your server here if needed
         // The Capacitor PushNotifications plugin will also handle token updates
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    // Handle notifications when app is in foreground
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                              willPresent notification: UNNotification,
+                              withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let userInfo = notification.request.content.userInfo
+        print("Notification received in foreground: \(userInfo)")
+
+        // Let Firebase Messaging handle the notification
+        Messaging.messaging().appDidReceiveMessage(userInfo)
+
+        // Show notification even when app is in foreground
+        if #available(iOS 14.0, *) {
+            completionHandler([[.banner, .badge, .sound]])
+        } else {
+            completionHandler([[.alert, .badge, .sound]])
+        }
+    }
+
+    // Handle notification tap
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                              didReceive response: UNNotificationResponse,
+                              withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        print("Notification tapped: \(userInfo)")
+
+        // Let Firebase Messaging handle the notification
+        Messaging.messaging().appDidReceiveMessage(userInfo)
+
+        completionHandler()
+    }
+}
+
+// MARK: - MessagingDelegate
+extension AppDelegate: MessagingDelegate {
+    // Handle FCM token refresh
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("Firebase registration token: \(String(describing: fcmToken))")
+
+        let dataDict: [String: String] = ["token": fcmToken ?? ""]
+        NotificationCenter.default.post(
+            name: Notification.Name("FCMToken"),
+            object: nil,
+            userInfo: dataDict
+        )
     }
 }
