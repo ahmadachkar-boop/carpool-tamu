@@ -1,8 +1,9 @@
 import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { Preferences } from '@capacitor/preferences';
 
 const isNativeApp = Capacitor.isNativePlatform();
 
@@ -180,7 +181,49 @@ export const initializeNativePushNotifications = async (userId) => {
     await PushNotifications.register();
     console.log('✅ Registered for push notifications');
 
-    // Listen for registration success
+    // iOS: Read FCM token from UserDefaults (set by AppDelegate)
+    if (Capacitor.getPlatform() === 'ios' && userId) {
+      // Wait for AppDelegate to save the token to UserDefaults
+      setTimeout(async () => {
+        try {
+          const { value } = await Preferences.get({ key: 'FCMToken' });
+
+          if (value) {
+            console.log('✅ Found FCM token in UserDefaults:', value.substring(0, 20) + '...');
+
+            // Save to Firestore
+            await setDoc(doc(db, 'fcmTokens', userId), {
+              token: value,
+              platform: 'ios',
+              updatedAt: new Date(),
+              userId
+            });
+            console.log('✅ FCM token automatically saved to Firestore!');
+          } else {
+            console.log('⚠️ No FCM token found in UserDefaults yet, will retry...');
+
+            // Retry after another 2 seconds
+            setTimeout(async () => {
+              const { value: retryValue } = await Preferences.get({ key: 'FCMToken' });
+              if (retryValue && userId) {
+                console.log('✅ Found FCM token on retry:', retryValue.substring(0, 20) + '...');
+                await setDoc(doc(db, 'fcmTokens', userId), {
+                  token: retryValue,
+                  platform: 'ios',
+                  updatedAt: new Date(),
+                  userId
+                });
+                console.log('✅ FCM token saved to Firestore on retry!');
+              }
+            }, 2000);
+          }
+        } catch (error) {
+          console.error('❌ Error reading FCM token from UserDefaults:', error);
+        }
+      }, 2000); // Wait 2 seconds for AppDelegate to initialize
+    }
+
+    // Listen for registration success (fallback for Android or if iOS method fails)
     PushNotifications.addListener('registration', async (token) => {
       console.log('✅ Push registration success, token:', token.value.substring(0, 20) + '...');
 
@@ -192,7 +235,7 @@ export const initializeNativePushNotifications = async (userId) => {
           updatedAt: new Date(),
           userId
         });
-        console.log('✅ Native push token saved to Firestore');
+        console.log('✅ Native push token saved to Firestore via registration event');
       }
     });
 
